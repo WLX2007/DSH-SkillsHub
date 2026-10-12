@@ -78,26 +78,30 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
   const [failures, setFailures] = useState<Array<{ source: string; message: string }>>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [sources, setSources] = useState<MarketSourceInfo[] | undefined>(undefined)
+  // The source the user picked BEFORE searching. Undefined means "every
+  // source"; the search is what applies the choice, so switching it after a
+  // search does not silently rewrite the results already on screen.
+  const [selectedSource, setSelectedSource] = useState<string>('all')
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
   // Sequence guard: a slow earlier search must not overwrite a newer one.
   const searchSeq = useRef(0)
   const labels = useMemo(() => markdownLabels(), [])
 
-  // The source list is static for the process lifetime; one fetch decorates the
-  // filter and tells the user which registries exist.
+  // The source list is static for the process lifetime; one fetch populates
+  // the picker the user chooses from before searching.
   useEffect(() => {
     let cancelled = false
     api.marketSources()
       .then(payload => { if (!cancelled) setSources(payload.sources) })
-      .catch(() => { /* the filter stays hidden; search still works */ })
+      .catch(() => { /* the picker stays on "all"; search still works */ })
     return () => { cancelled = true }
   }, [api])
 
-  const runSearch = async (text: string, limit = 20): Promise<void> => {
+  const runSearch = async (text: string, limit = 20, source: string): Promise<void> => {
     const seq = ++searchSeq.current
     setState({ kind: 'loading' })
     try {
-      const payload = await api.marketSearch(text, limit)
+      const payload = await api.marketSearch(text, limit, source === 'all' ? undefined : source)
       if (seq !== searchSeq.current) return
       setResults(payload.skills)
       setCounts(payload.counts)
@@ -118,14 +122,18 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
       setState({ kind: 'idle' })
       return
     }
-    void runSearch(text)
+    void runSearch(text, 20, selectedSource)
   }
 
   const searchable = sources?.some(source => source.searchable) ?? true
 
   return (
     <div className={css.market} data-dsh-part="market">
+      {/* The source is chosen before the search: a request means "search this
+          registry", not "search everything and mix it". The picker sits beside
+          the search field so the choice is visibly part of the query. */}
       <div className={css.filterBar}>
+        <SourcePicker sources={sources} value={selectedSource} onChange={setSelectedSource} />
         <div className={css.filterField}>
           <Input
             type="search"
@@ -144,22 +152,13 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
         <div className={css.filterSpacer} />
       </div>
 
-      {/* Which registries the host carries, and which of them answered. */}
-      {sources !== undefined && sources.length > 0 && (
-        <p className={css.marketSourcesLine} data-dsh-part="market-sources">
-          {tt('market.sourcesLabel')}
-          {sources.map(source => (
-            <Tag key={source.name} tone={source.searchable ? 'outline' : 'quiet'}>{source.name}</Tag>
-          ))}
-        </p>
-      )}
-
       {state.kind === 'error' && <p className={css.banner} data-dsh-part="market-error">{state.message}</p>}
       {failures.length > 0 && results !== undefined && (
         <p className={css.marketNotice} data-dsh-part="market-failures">
           {tt('market.partialFailure', { sources: failures.map(entry => entry.source).join(', ') })}
         </p>
-      )}
+      )
+      }
 
       {/* Results: the same card anatomy as the skills list, one row per skill. */}
       {results !== undefined && submitted !== '' && (
@@ -392,28 +391,46 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** The source filter pill row: which registries carried results for this query. */
-export function SourceFilter({ counts, sources, value, onChange }: {
-  counts: Record<string, number>
+/**
+ * The source picker: which registry the next search will ask.
+ *
+ * Chosen BEFORE the search, so it sits to the left of the field and reads as
+ * part of the query rather than as a filter applied after the fact. "all"
+ * searches every source at once; each named option is one registry, and the
+ * count of results it carried for the last search is shown beside its name so
+ * the choice is informed.
+ *
+ * @param sources - the sources the host registers; undefined while loading.
+ * @param value - the selected source name, or 'all'.
+ * @param onChange - called with the chosen source name.
+ * @returns the picker, or null when the host registers fewer than two sources.
+ */
+function SourcePicker({ sources, value, onChange }: {
   sources: MarketSourceInfo[] | undefined
   value: string
   onChange: (next: string) => void
 }): React.JSX.Element | null {
   const [open, setOpen] = useState(false)
-  const names = sources?.map(source => source.name) ?? Object.keys(counts)
-  if (names.length === 0) return null
-  const items = names.map(name => ({ id: name, label: name }))
+  const names = sources?.map(source => source.name) ?? []
+  // One source needs no choice: there is nothing to pick between, and a
+  // picker over a single option would only imply a choice exists.
+  if (names.length < 2) return null
+  const items = [
+    { id: 'all', label: tt('market.allSources') },
+    ...names.map(name => ({ id: name, label: name })),
+  ]
+  const current = items.find(item => item.id === value)
   return (
     <Menu
       open={open}
       items={items}
       selectedId={value}
-      align="end"
+      align="start"
       onSelect={id => { onChange(id); setOpen(false) }}
       onClose={() => { setOpen(false) }}
       anchor={(
         <Pill active={open} onClick={() => { setOpen(!open) }} aria-haspopup="menu" aria-expanded={open}>
-          {value === 'all' ? tt('market.allSources') : value}
+          {current?.label ?? tt('market.allSources')}
           <IconChevronDownOutlineRegular size={14} />
         </Pill>
       )}

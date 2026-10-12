@@ -131,32 +131,48 @@ export class Market {
   }
 
   /**
-   * Search every searchable source and merge the rows.
+   * Search the requested source, or every searchable one when none is named.
+   *
+   * A named source is searched ALONE: the panel asks the user to pick a source
+   * before searching, so a request means "search this registry", not "search
+   * everything and mix it". The merge path still exists for the unnamed case,
+   * which keeps the fan-out and de-duplication rules in one place for a caller
+   * that does want both registries at once.
    *
    * @param query - free text.
-   * @param limit - maximum rows in the merged result.
+   * @param limit - maximum rows in the result.
    * @param signal - caller cancellation.
-   * @returns merged rows plus per-source counts and failures.
+   * @param source - the source to search, or undefined for all of them.
+   * @returns rows plus per-source counts and failures.
    */
-  async search(query: string, limit: number, signal?: AbortSignal): Promise<SearchOutcome> {
+  async search(query: string, limit: number, signal?: AbortSignal, source?: string): Promise<SearchOutcome> {
     const ctx = this.context(signal)
+    const targets = this.listSources().filter(candidate =>
+      // A named source is searched even if it reports itself unsearchable —
+      // the panel only offers the filter choices the host registered, and a
+      // name the host did not register is rejected below rather than silently
+      // widened to "all".
+      source === undefined ? candidate.searchable : candidate.name === source,
+    )
+    if (source !== undefined && targets.length === 0) {
+      throw new MarketFetchError('parse', `unknown market source: ${source}`)
+    }
+
     const perSource = await Promise.all(
-      this.listSources()
-        .filter(source => source.searchable)
-        .map(async (source): Promise<{ name: string; rows: MarketSkill[]; error?: string }> => {
-          try {
-            const rows = await this.caches.search.resolve(
-              this.searchCacheKey(source.name, query, limit),
-              () => source.search(query, limit, ctx),
-            )
-            // A source may hand back a readonly array; the merge below builds
-            // its own list, so the copy here is only to satisfy the type.
-            return { name: source.name, rows: [...rows] }
-          } catch (error) {
-            const message = error instanceof MarketFetchError ? `${error.code}: ${error.message}` : String(error)
-            return { name: source.name, rows: [], error: message }
-          }
-        }),
+      targets.map(async (source): Promise<{ name: string; rows: MarketSkill[]; error?: string }> => {
+        try {
+          const rows = await this.caches.search.resolve(
+            this.searchCacheKey(source.name, query, limit),
+            () => source.search(query, limit, ctx),
+          )
+          // A source may hand back a readonly array; the merge below builds
+          // its own list, so the copy here is only to satisfy the type.
+          return { name: source.name, rows: [...rows] }
+        } catch (error) {
+          const message = error instanceof MarketFetchError ? `${error.code}: ${error.message}` : String(error)
+          return { name: source.name, rows: [], error: message }
+        }
+      }),
     )
 
     // De-duplicate by skill coordinate: two registries indexing the same skill

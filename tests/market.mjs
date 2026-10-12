@@ -165,6 +165,78 @@ await check('the limit bounds the merged result', async () => {
   assert.equal(outcome.skills.length, 5)
 })
 
+console.log('\nnamed source: the picker chooses before the search')
+
+// Two stub sources that record what they were asked, so a search can be
+// pinned to exactly the registry the user picked.
+function trackingSource(name, rows) {
+  const asked = []
+  return {
+    source: {
+      name,
+      searchable: true,
+      async search(query, limit) {
+        asked.push({ query, limit })
+        return rows
+      },
+      async detail() { return undefined },
+    },
+    asked,
+  }
+}
+
+await check('a named source is searched alone', async () => {
+  const market = new Market({ builtins: false })
+  const a = trackingSource('a', [rowFor('a')])
+  const b = trackingSource('b', [rowFor('b')])
+  market.register(a.source)
+  market.register(b.source)
+
+  const outcome = await market.search('q', 20, undefined, 'b')
+  assert.equal(outcome.skills.length, 1)
+  assert.equal(outcome.skills[0].provider, 'b')
+  // The other registry must not have been asked at all: a named search means
+  // one registry, not "both but ranked".
+  assert.deepEqual(a.asked, [])
+  assert.equal(b.asked.length, 1)
+})
+
+await check('an unknown source name is rejected, not widened to all', async () => {
+  const market = new Market({ builtins: false })
+  const a = trackingSource('a', [rowFor('a')])
+  market.register(a.source)
+  await assert.rejects(
+    () => market.search('q', 20, undefined, 'nope'),
+    /unknown market source: nope/,
+  )
+  // The rejection must not fall through to a fan-out search.
+  assert.deepEqual(a.asked, [])
+})
+
+await check('no named source keeps the fan-out over every searchable source', async () => {
+  const market = new Market({ builtins: false })
+  const a = trackingSource('a', [rowFor('a')])
+  const b = trackingSource('b', [rowFor('b')])
+  market.register(a.source)
+  market.register(b.source)
+  const outcome = await market.search('q', 20)
+  assert.equal(outcome.skills.length, 2)
+  assert.equal(a.asked.length, 1)
+  assert.equal(b.asked.length, 1)
+})
+
+/** A minimal row for the tracking sources. */
+function rowFor(provider) {
+  return {
+    id: `${provider}:o/r@HEAD:`,
+    name: 'skill',
+    description: '',
+    provider,
+    sourceLabel: 'o/r',
+    origin: { kind: 'github', owner: 'o', repo: `r-${provider}`, ref: 'HEAD', dir: '' },
+  }
+}
+
 console.log('\nids: the client can only reach skills a source offered')
 
 await check('detail rejects an id that no source minted', async () => {

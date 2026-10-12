@@ -659,10 +659,15 @@ export function makeRoutes(ctx: Context, deps: SkillsHubRouteDeps): WebRoute[] {
           // Bounded both ways: a huge limit cannot drain a registry page into
           // the response, and a non-numeric one cannot NaN the slice.
           const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 50) : 20
-          const outcome = await market.search(query, limit, reqSignal(req))
+          // The source the user picked before searching. Undefined searches
+          // every source; a name the host does not register is rejected by the
+          // market layer rather than silently widened to "all".
+          const source = queryParam(url, 'source')
+          const outcome = await market.search(query, limit, reqSignal(req), source)
           writeJson(res, 200, {
             query,
             limit,
+            ...(source === undefined ? {} : { source }),
             skills: outcome.skills,
             counts: outcome.counts,
             failures: outcome.failures,

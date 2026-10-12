@@ -207,6 +207,8 @@ export interface MarketDetail {
 export interface MarketSearchPayload {
   query: string
   limit: number
+  /** The source that was searched, present when the request named one. */
+  source?: string
   skills: MarketSkill[]
   counts: Record<string, number>
   /** Sources that failed, with the reason: a down registry degrades the page. */
@@ -290,9 +292,16 @@ export class SkillsHubApi {
 
   // --- Market (M2) ---------------------------------------------------------
 
-  /** Search the online skill registries. */
-  async marketSearch(query: string, limit = 20): Promise<MarketSearchPayload> {
+  /**
+   * Search the online skill registries.
+   * @param query - free text.
+   * @param limit - maximum rows.
+   * @param source - the source to search, chosen by the user before the
+   *   search; omitted searches every source at once.
+   */
+  async marketSearch(query: string, limit = 20, source?: string): Promise<MarketSearchPayload> {
     const params = new URLSearchParams({ q: query, limit: String(limit) })
+    if (source !== undefined && source !== '') params.set('source', source)
     return this.request<MarketSearchPayload>(`${API.marketSearch}?${params.toString()}`)
   }
 
