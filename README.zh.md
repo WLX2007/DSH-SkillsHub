@@ -11,13 +11,32 @@ DeepSeek Harness (DSH) **技能中心** —— 一个原生 Web GUI 面板，用
 
 | 页签 | 作用 | 状态 |
 | --- | --- | --- |
-| 市场 | 搜索网络技能库、预览 `SKILL.md`、安装到用户或项目根 | M2-M4 |
+| 市场 | 搜索网络技能库、预览 `SKILL.md`、安装到用户或项目根 | 搜索与详情**已完成**；安装 M3 |
 | 我的技能 | 按来源浏览已加载技能、启用/停用、编辑、删除 | **已完成** |
 | 创建 | 把新技能写入用户或项目根 | **已完成** |
 
 面板读取官方技能根（`<项目>/.dsh/skills`、`<项目>/.agents/skills`、`~/.dsh/skills`、
 `~/.agents/skills`，加上配置的 `customSkillDirs`），再与宿主技能注册表合并，
 因此面板显示的技能就是模型实际收到的那个。
+
+## 技能市场
+
+「市场」页搜索网络上的技能库。两个来源：
+
+- **skills.sh** —— Agent Skills 注册中心的搜索接口（未认证、不限次）。
+- **GitHub 仓库直连** —— 输入 `owner/repo`（完整 URL、`.git` 后缀均可），枚举其中全部技能目录。
+
+搜索结果与本地技能同一套卡片样式；点技能名打开详情，正文用 shell 自己的 markdown 渲染器
+呈现，并列出该技能包含的全部文件。来源失效时页面降级而非空白：其余结果照常显示，失效的
+来源在顶部提示一次。
+
+**网络策略**（都来自实测约束，详见 `docs/技能市场插件开发方案.md` M2 一节）：
+
+- 未认证 GitHub API 只有 **60 次/小时**，所以只有"发现"（列目录）才碰 API，且缓存 30 分钟；
+  正文一律读 raw.githubusercontent.com（不限次）。
+- 技能正文经 GitHub 加速节点链获取（直连优先，失败逐个降级），节点列表可在配置里覆盖。
+- 客户端只回传 host 发的**不透明技能 id**，URL、仓库、路径一律由 host 从 id 重建；
+  id 文法在解码时逐段校验，路径逃逸在到达任何 fetch 之前被拒绝。
 
 ## 路由
 
@@ -26,6 +45,10 @@ DeepSeek Harness (DSH) **技能中心** —— 一个原生 Web GUI 面板，用
 | `api/skills-hub/list` | GET | 按来源分级的本地技能列表 |
 | `api/skills-hub/read` | GET | 单个技能的可编辑字段与正文 |
 | `api/skills-hub/preview` | GET | 技能预览（文件优先，回退技能注册表） |
+| `api/skills-hub/market/search` | GET | 市场检索（多源聚合去重） |
+| `api/skills-hub/market/detail` | GET | 一个市场技能的可读详情 |
+| `api/skills-hub/market/list-repo` | GET | 枚举一个仓库下的全部技能 |
+| `api/skills-hub/market/sources` | GET | 市场来源清单 |
 | `api/skills-hub/set-enabled` | POST | 启用/停用（改写 `disable-model-invocation`） |
 | `api/skills-hub/set-provider-enabled` | POST | 面板本地开关插件提供的技能 |
 | `api/skills-hub/create` | POST | 在用户或项目根创建技能 |

@@ -37,6 +37,14 @@ export { ROUTES }
 export { makeRoutes }
 export type { SkillsHubRouteDeps }
 
+/**
+ * The market registry is NOT re-exported from this entry: the bundler folds a
+ * re-exported binding into the single local binding its internal consumer
+ * holds, and a bridge const then referenced the bundle's renamed local. The
+ * market modules are emitted under their own entry instead (`lib/market.js` —
+ * see tsdown.config.ts), which is what the tests import.
+ */
+export { skillsShSource, resolveOrigin as resolveSkillOrigin } from './market/sources/skills-sh.ts'
 /** Plugin config (profile patch / settings surface). */
 export interface Config {
   /** Master switch for the route family. */
@@ -112,6 +120,11 @@ function applyImpl(ctx: Context, config?: Config): void {
       if (typeof skills?.get !== 'function') return undefined
       return (name: string, options: { cwd: string }) => skills.get(name, options)
     },
+    // Config override for the market's accelerator chain; undefined keeps the
+    // built-in chain, which tries GitHub directly before any mirror.
+    githubProxies: Array.isArray(config?.githubProxies)
+      ? config.githubProxies.filter((proxy): proxy is string => typeof proxy === 'string')
+      : undefined,
     activeSessionCwds,
     logger: { warn: (error: unknown) => ctx.logger.warn(error) },
   }

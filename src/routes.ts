@@ -18,6 +18,30 @@
  * @module @wulongxi/dsh-skills-hub/routes
  */
 
+/**
+ * The /api/skills-hub route family.
+ *
+ * Every route carries the shared trust fence (loopback by default; a live
+ * paired-device cookie is an extra allow path when remote-web-ui is loaded) plus
+ * browser same-origin markers.
+ *
+ * Local-management routes (M1): list (grouped by source), read, set-enabled,
+ * set-provider-enabled, create, update, delete, health.
+ *
+ * Market routes (M2): market/search, market/detail, market/list-repo and
+ * market/sources. Every market route accepts only opaque skill ids — never a
+ * URL, a repository, or a file path — so the browser cannot aim the host's
+ * network access anywhere the market sources did not already offer.
+ *
+ * Write-route trust rule: a client-submitted `path` is only an identity CLAIM.
+ * Before touching any file the host re-scans and requires the same name to
+ * resolve to that exact path, so a project skill that disappeared can never be
+ * redirected onto a same-named user skill, and the routes cannot be used to
+ * write arbitrary paths.
+ *
+ * @module @wulongxi/dsh-skills-hub/routes
+ */
+
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
@@ -25,6 +49,8 @@ import { join, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { isSkillsHubAllowed } from './access.ts'
+import { Market } from './market/registry.ts'
+import { MarketFetchError } from './market/fetch.ts'
 import {
   buildPayload,
   collectSkills,
@@ -63,6 +89,14 @@ export const ROUTES = {
   update: '/api/skills-hub/update',
   /** Move a skill into .trash. */
   delete: '/api/skills-hub/delete',
+  /** Market search across the registered online sources. */
+  marketSearch: '/api/skills-hub/market/search',
+  /** One market skill's readable detail. */
+  marketDetail: '/api/skills-hub/market/detail',
+  /** The skills of one repository the user named. */
+  marketListRepo: '/api/skills-hub/market/list-repo',
+  /** Which market sources exist and whether they answered. */
+  marketSources: '/api/skills-hub/market/sources',
   /** Liveness and capability probe. */
   health: '/api/skills-hub/health',
 } as const
@@ -71,6 +105,19 @@ export const ROUTES = {
 function queryParam(url: URL, name: string): string | undefined {
   const value = url.searchParams.get(name)
   return value === null ? undefined : value
+}
+
+/**
+ * The client's cancellation for a market request.
+ *
+ * The webserver does not hand the handler an abort signal, so there is nothing
+ * to compose yet; the undefined signal lets the market layer fall back to its
+ * own timeout, which is what bounds a hung origin. When the server surfaces
+ * request aborts, this is the single seam that picks them up.
+ * @returns undefined for now.
+ */
+function reqSignal(_req: IncomingMessage): undefined {
+  return undefined
 }
 
 /** Route family dependencies (tests inject fakes). */
@@ -93,6 +140,11 @@ export interface SkillsHubRouteDeps {
   loadSkill: ((name: string, options: { cwd: string }) => Promise<{ name: string; description: string; content: string; path?: string; source?: string; provider?: string } | undefined>) | undefined
   /** Active session workspace cwds. */
   activeSessionCwds(): string[]
+  /**
+   * GitHub accelerator prefixes for market fetches, in preference order.
+   * Undefined uses the built-in chain, which tries GitHub directly first.
+   */
+  githubProxies?: readonly string[]
   /** Logger. */
   logger: { warn(error: unknown): void }
 }
@@ -125,6 +177,18 @@ export function makeRoutes(ctx: Context, deps: SkillsHubRouteDeps): WebRoute[] {
   const { logger } = deps
   const dshHome = resolveDshHome(deps.dshHome)
   const agentsHome = resolveAgentsHome()
+
+  // The market instance is per-route-family, so its caches live for the
+  // process lifetime: a repository tree cached now is reused by every later
+  // search and detail view, which is what makes the 60/hour API budget usable.
+  const market = new Market({ proxies: deps.githubProxies })
+
+  /** Report a market failure: a source error is expected, not an exception. */
+  const marketFail = (res: ServerResponse, error: unknown): void => {
+    logger.warn(error)
+    const status = error instanceof MarketFetchError && error.code === 'too-large' ? 502 : 502
+    writeJson(res, status, { error: error instanceof Error ? error.message : String(error) })
+  }
 
   /**
    * Every custom skill root the panel should scan: this plugin's own config plus
@@ -574,6 +638,90 @@ export function makeRoutes(ctx: Context, deps: SkillsHubRouteDeps): WebRoute[] {
         } catch (error) {
           fail(res, error)
         }
+      },
+    },
+
+    // --- Market routes (M2) -------------------------------------------------
+    //
+    // Every market route accepts opaque skill ids only. The browser never sends
+    // a URL, a repository name, or a file path, so the host's network access
+    // cannot be aimed anywhere the market sources did not already offer.
+
+    {
+      kind: 'exact',
+      path: ROUTES.marketSearch,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (!guard(req, res, 'GET')) return
+        try {
+          const url = new URL(req.url ?? '/', 'http://x')
+          const query = queryParam(url, 'q') ?? ''
+          const limitRaw = Number(queryParam(url, 'limit'))
+          // Bounded both ways: a huge limit cannot drain a registry page into
+          // the response, and a non-numeric one cannot NaN the slice.
+          const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 50) : 20
+          const outcome = await market.search(query, limit, reqSignal(req))
+          writeJson(res, 200, {
+            query,
+            limit,
+            skills: outcome.skills,
+            counts: outcome.counts,
+            failures: outcome.failures,
+          }, { 'cache-control': 'no-store' })
+        } catch (error) {
+          marketFail(res, error)
+        }
+      },
+    },
+    {
+      kind: 'exact',
+      path: ROUTES.marketDetail,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (!guard(req, res, 'GET')) return
+        try {
+          const url = new URL(req.url ?? '/', 'http://x')
+          const id = queryParam(url, 'id')
+          if (id === undefined || id.trim() === '') {
+            writeJson(res, 400, { error: 'expected ?id=<skill id>' })
+            return
+          }
+          const detail = await market.detail(id, reqSignal(req))
+          if (detail === undefined) {
+            writeJson(res, 404, { error: `skill ${id} is not offered by any market source` })
+            return
+          }
+          writeJson(res, 200, detail, { 'cache-control': 'no-store' })
+        } catch (error) {
+          marketFail(res, error)
+        }
+      },
+    },
+    {
+      kind: 'exact',
+      path: ROUTES.marketListRepo,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (!guard(req, res, 'GET')) return
+        try {
+          const url = new URL(req.url ?? '/', 'http://x')
+          const repo = queryParam(url, 'repo')
+          if (repo === undefined || repo.trim() === '') {
+            writeJson(res, 400, { error: 'expected ?repo=<owner/repo>' })
+            return
+          }
+          const skills = await market.listRepo(repo, reqSignal(req))
+          writeJson(res, 200, { repo, skills }, { 'cache-control': 'no-store' })
+        } catch (error) {
+          marketFail(res, error)
+        }
+      },
+    },
+    {
+      kind: 'exact',
+      path: ROUTES.marketSources,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (!guard(req, res, 'GET')) return
+        writeJson(res, 200, {
+          sources: market.listSources().map(source => ({ name: source.name, searchable: source.searchable })),
+        }, { 'cache-control': 'no-store' })
       },
     },
     {

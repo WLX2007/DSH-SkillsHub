@@ -97,7 +97,17 @@ function buildPackageVersion(): string {
 function hostLibraryConfig(): UserConfig {
   return {
     name: `${PLUGIN_ID}/host`,
-    entry: ['src/index.ts'],
+    // `lib/market.js` is a companion entry, not part of the plugin surface:
+    // the loader imports `main` (lib/index.js) alone. It exists because the
+    // market classes are exercised by tests that import the built artifacts,
+    // and tsdown folds a re-exported binding into the single local binding its
+    // internal consumer already holds — `export { Market }` from index.ts was
+    // dropped twice, and a `const SkillsHubMarket = Market` bridge then
+    // referenced the bundle's renamed local (`Market$1`) and crashed at import.
+    // Emitting the module under its own entry sidesteps the folding entirely:
+    // each entry keeps its own bindings. The object form fixes the file name,
+    // which a path entry would derive as a content-hashed chunk name.
+    entry: { index: 'src/index.ts', market: 'src/market/registry.ts' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

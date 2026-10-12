@@ -1,0 +1,41 @@
+feat: market search across online skill registries (M2)
+
+The Market tab now searches the web for skills instead of reporting itself
+not yet built. Two sources ship:
+
+- skills.sh, the Agent Skills registry's search endpoint, which returns a
+  skill's repository coordinates and an install count but neither a
+  description nor a path;
+- a GitHub source, which enumerates the skill directories of any repository
+  the user names (a full URL or a .git suffix also work).
+
+Selecting a result opens a detail dialog rendered by the shell's own
+MarkdownText, listing the skill's files beside its body.
+
+Two measured constraints shaped the layer:
+
+- The unauthenticated GitHub API allows 60 requests/hour, so only discovery
+  touches it and is cached for 30 minutes; file bodies come from raw
+  content, which is outside that budget. Registry hits carry no ref, and
+  HEAD turns out to work as a raw ref, so one search page spanning many
+  repositories costs no API call at all.
+- GitHub accelerator mirrors come and go (two of eight probed were dead), so
+  raw fetches run through a degrading candidate chain that remembers the
+  first node to answer; the API host is never routed through one, because
+  mirrors generally do not pass API traffic and the budget is scarce.
+
+Security: the browser only ever sends back the opaque skill id the host
+issued. The id grammar is validated segment by segment when decoded, so a
+path traversal or a foreign URL is rejected before it reaches any fetch.
+A source that is down degrades the page - the other results still show and
+the failure is noted once above them.
+
+Engineering note: exporting the market class from lib/index.js was folded
+away by the bundler (the re-export shares a binding with makeRoutes's
+internal use), and a bridge const then referenced the bundle's renamed
+local and crashed at import. The market modules are emitted under their own
+companion entry (lib/market.js) instead, which the tests import.
+
+Tests: 9 market checks (aggregation, de-duplication, ranking, the id grammar
+against four path-escape attempts, the skills.sh contract) - all with a fake
+transport, none touching the network.

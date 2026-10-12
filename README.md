@@ -14,7 +14,7 @@ roots, and managing or creating local skills.
 
 | Tab | Purpose | Status |
 | --- | --- | --- |
-| Market | Search online skill registries, preview `SKILL.md`, install into the user or project root | M2-M4 |
+| Market | Search online skill registries, preview `SKILL.md`, install into the user or project root | Search and detail **done**; install M3 |
 | My Skills | Browse loaded skills by source, enable/disable, edit, delete | **done** |
 | Create | Write a new skill into the user or project root | **done** |
 
@@ -23,6 +23,35 @@ The panel reads the official skill roots
 `~/.agents/skills`, plus configured `customSkillDirs`) and merges the host's
 skill registry on top, so what the panel shows is what the model receives.
 
+## Skill market
+
+The Market tab searches online skill registries. Two sources:
+
+- **skills.sh** — the Agent Skills registry's search endpoint (unauthenticated,
+  not rate limited as far as observed).
+- **GitHub repositories** — type `owner/repo` (a full URL or a `.git` suffix
+  also work) and the panel enumerates every skill directory inside it.
+
+Results use the same card anatomy as the local skills list; selecting a skill's
+name opens a detail dialog rendered by the shell's own markdown renderer, with
+the skill's file list beside the body. A source that is down degrades the page
+rather than blanking it: the remaining results still show, and the failed
+source is noted once above them.
+
+**Network policy** (each item a measured constraint — see M2 in the
+development plan):
+
+- The unauthenticated GitHub API allows **60 requests/hour**, so only
+  *discovery* (directory listing) touches it, cached for 30 minutes; file
+  bodies come from raw.githubusercontent.com, which does not count against
+  that budget.
+- Skill bodies are fetched through a GitHub accelerator chain (direct first,
+  then mirrors in order); the list is overridable in the plugin config.
+- The browser only ever sends back the **opaque skill id** the host issued;
+  URLs, repositories and paths are re-derived host-side. The id grammar is
+  validated segment by segment, so a path traversal is rejected before it can
+  reach any fetch.
+
 ## Routes
 
 | Route | Method | Purpose |
@@ -30,6 +59,10 @@ skill registry on top, so what the panel shows is what the model receives.
 | `api/skills-hub/list` | GET | Local skills grouped by source |
 | `api/skills-hub/read` | GET | One skill's editable fields and body |
 | `api/skills-hub/preview` | GET | Skill preview (file first, registry fallback) |
+| `api/skills-hub/market/search` | GET | Market search (multi-source, merged and de-duplicated) |
+| `api/skills-hub/market/detail` | GET | One market skill's readable detail |
+| `api/skills-hub/market/list-repo` | GET | Enumerate the skills inside one repository |
+| `api/skills-hub/market/sources` | GET | The market's source list |
 | `api/skills-hub/set-enabled` | POST | Enable/disable (rewrites `disable-model-invocation`) |
 | `api/skills-hub/set-provider-enabled` | POST | Enable/disable a plugin-provided skill in the panel's own store |
 | `api/skills-hub/create` | POST | Create a skill under the user or project root |

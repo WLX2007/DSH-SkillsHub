@@ -106,6 +106,58 @@
   gap: 8px;
 }
 
+/* The market wraps its own search row and results in one column, so the cards
+   below a search keep the page's optical edges. */
+.market {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Which registries exist: one quiet line of source tags under the search. */
+.marketSourcesLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* A source that did not answer: stated once, above results that still stand. */
+.marketNotice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+/* An install count, right-aligned in a card's end so the ranking reads. */
+.marketInstalls {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The files an install would bring, as inline code chips. */
+.marketFileList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 0;
+}
+
+.marketMore {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .filterField {
   flex: 1;
   min-width: 0;

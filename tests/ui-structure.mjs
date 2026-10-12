@@ -143,6 +143,41 @@ check('the card title is the preview trigger', () => {
   if (!tabSource.includes('SkillPreviewDialog')) throw new Error('the preview dialog is not mounted by the card')
 })
 
+console.log('\nthe market page reuses the list and the renderer')
+
+const marketSource = stripComments(read('MarketTab.tsx'))
+
+check('market results use the shipped card anatomy', () => {
+  for (const cls of ['card', 'cardHead', 'cardIcon', 'cardMain', 'titleRow', 'cardDesc', 'cardEnd']) {
+    if (!marketSource.includes(`css.${cls}`)) throw new Error(`market card is missing .${cls}`)
+  }
+  // A bespoke row shape here would fork the list's look from the skills tab.
+  if (/css\.row\b/.test(marketSource)) {
+    throw new Error('market rows use the old row shape instead of cards')
+  }
+})
+
+check('market detail renders through the shell markdown renderer', () => {
+  if (!marketSource.includes('MarkdownText')) throw new Error('the market detail is not rendered by MarkdownText')
+  if (!marketSource.includes('Modal')) throw new Error('the market detail is not a Modal')
+  if (/dangerouslySetInnerHTML/.test(marketSource)) throw new Error('the market detail injects HTML')
+})
+
+check('market markdown labels stay referentially stable', () => {
+  if (!/useMemo\(/.test(marketSource)) throw new Error('market labels are rebuilt every render')
+})
+
+check('the market offers no install action before the installer exists', () => {
+  // The next milestone adds installation; until its route exists, the tab must
+  // not render a control that can only fail. The pattern is deliberately
+  // narrow: an install-count badge (`marketInstalls`, a registry statistic)
+  // is legitimate and must not trip it, so only an install *action* matches —
+  // a button or a handler named install.
+  if (/onInstall|installSkill|action\.install|'market\.install\b|安装到/.test(marketSource)) {
+    throw new Error('the market tab offers an install action before M3 exists')
+  }
+})
+
 console.log('\nthe list keeps the shipped page structure')
 
 check('cards are a ul.cards list of li.card rows', () => {

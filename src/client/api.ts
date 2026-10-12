@@ -22,6 +22,10 @@ const API = {
   update: 'api/skills-hub/update',
   delete: 'api/skills-hub/delete',
   health: 'api/skills-hub/health',
+  marketSearch: 'api/skills-hub/market/search',
+  marketDetail: 'api/skills-hub/market/detail',
+  marketListRepo: 'api/skills-hub/market/list-repo',
+  marketSources: 'api/skills-hub/market/sources',
 } as const
 
 /**
@@ -111,11 +115,9 @@ export interface SkillDocument {
 /**
  * One skill prepared for preview.
  *
- * `markdown` is a SKILL.md-shaped document (frontmatter block, then the body)
- * for EVERY skill, so the preview looks the same whether the bytes came off
- * disk or out of the registry. `source` says which it was: a runtime-registered
- * skill has no file of its own, and the preview states that rather than
- * pretending a path exists.
+ * `markdown` is the skill's BODY only: the frontmatter fields travel as their
+ * own JSON and are shown as a definition list, because a leading `---` fence is
+ * a thematic break in GFM and would mangle the YAML into headings and prose.
  */
 export interface SkillPreview {
   name: string
@@ -131,8 +133,71 @@ export interface SkillPreview {
   /** Where the preview's text came from. */
   source: 'file' | 'registry'
   provider?: string
-  /** The rendered document. */
+  /** The skill's markdown body (frontmatter stripped). */
   markdown: string
+}
+
+// --- Market (M2) -----------------------------------------------------------
+
+/** Where a market skill's files live. */
+export interface MarketOrigin {
+  kind: 'github'
+  owner: string
+  repo: string
+  ref: string
+  /** Repository-relative directory holding SKILL.md, '' for the repo root. */
+  dir: string
+}
+
+/** One skill as a market source serves it. */
+export interface MarketSkill {
+  /** Opaque coordinate the client sends back verbatim. */
+  id: string
+  name: string
+  /** Empty for a registry hit; filled in from the file when the user opens it. */
+  description: string
+  provider: string
+  /** Human-readable origin, e.g. `anthropics/skills`. */
+  sourceLabel: string
+  origin: MarketOrigin
+  installs?: number
+}
+
+/** One file inside a market skill. */
+export interface MarketFile {
+  /** Path relative to the skill directory. */
+  path: string
+  size: number
+}
+
+/** One market skill's readable detail. */
+export interface MarketDetail {
+  skill: MarketSkill
+  /** The SKILL.md body (frontmatter stripped). */
+  body: string
+  frontmatter: {
+    name?: string
+    description?: string
+    whenToUse?: string
+  }
+  files: MarketFile[]
+  totalBytes: number
+}
+
+/** One market search outcome. */
+export interface MarketSearchPayload {
+  query: string
+  limit: number
+  skills: MarketSkill[]
+  counts: Record<string, number>
+  /** Sources that failed, with the reason: a down registry degrades the page. */
+  failures: Array<{ source: string; message: string }>
+}
+
+/** One market source as the host reports it. */
+export interface MarketSourceInfo {
+  name: string
+  searchable: boolean
 }
 
 /** One thrown API error with the host-provided message. */
@@ -202,6 +267,29 @@ export class SkillsHubApi {
   /** Liveness and capability probe. */
   async health(): Promise<HealthPayload> {
     return this.request<HealthPayload>(API.health)
+  }
+
+  // --- Market (M2) ---------------------------------------------------------
+
+  /** Search the online skill registries. */
+  async marketSearch(query: string, limit = 20): Promise<MarketSearchPayload> {
+    const params = new URLSearchParams({ q: query, limit: String(limit) })
+    return this.request<MarketSearchPayload>(`${API.marketSearch}?${params.toString()}`)
+  }
+
+  /** One market skill's readable detail, by its opaque id. */
+  async marketDetail(id: string): Promise<MarketDetail> {
+    return this.request<MarketDetail>(`${API.marketDetail}?id=${encodeURIComponent(id)}`)
+  }
+
+  /** The skills of one repository the user named. */
+  async marketListRepo(repo: string): Promise<MarketSearchPayload & { repo: string }> {
+    return this.request(`${API.marketListRepo}?repo=${encodeURIComponent(repo)}`)
+  }
+
+  /** Which market sources exist. */
+  async marketSources(): Promise<{ sources: MarketSourceInfo[] }> {
+    return this.request(API.marketSources)
   }
 
   private async request<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
