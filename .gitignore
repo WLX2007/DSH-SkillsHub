@@ -1,0 +1,26 @@
+# Dependencies and build output.
+node_modules/
+lib/
+
+# Local scratch.
+*.log
+.DS_Store
+
+# Research material — NOT part of this package, and not ours to redistribute.
+#
+#   reference/dsh-web/     a full clone of a third-party repository (BSD-3 and
+#                          Apache-2.0 content, ~649 MB with its own .git)
+#   reference/official-*/  DeepSeek Harness application code extracted from the
+#                          installed app.asar for reading during development
+#   reference/installed/   the same, for the installed nightly build
+#
+# Keeping any of it here would add ~660 MB of vendored third-party trees to the
+# history and republish code this package does not own. The authoritative
+# sources are the upstream repositories, fetched on demand:
+#   https://github.com/deepseek-ai/deepseek-harness   (MIT)
+#   https://github.com/zhu1090093659/dsh-web
+reference/
+
+# Editors.
+.vscode/
+.idea/

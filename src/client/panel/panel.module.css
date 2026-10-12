@@ -1,0 +1,499 @@
+/*
+ * Skills-hub panel layout.
+ *
+ * This file mirrors the shipped Plugin-manager and Schedules pages: a centred
+ * 960px column on the page's own scroll surface, a 20px page title with a
+ * 13px intro line, source groups headed by a 14px title plus a tabular count,
+ * and package-style cards whose hover surface bleeds 8px past the content.
+ *
+ * SCOPE: layout and geometry only. Every control (button, switch, input, tag,
+ * pill, segmented control, path label, icon) is the official
+ * `@deepseek-ai/dsh-client-ui-primitives` component and brings its own styling;
+ * nothing here re-draws a shipped control, because copying one is what the
+ * official UI package forbids and what made an earlier revision drift from the
+ * shell.
+ *
+ * Colors come only from official theme tokens — no palette of this file's own,
+ * no dark-mode override block. Token names are verified against the shipped
+ * ui-theme table by tests/theme-tokens.mjs, since an undefined custom property
+ * drops its declaration silently.
+ *
+ * Geometry source: the shipped plugin-manager stylesheet
+ * (`PluginManagerPage.module.css`), read from the installed bundle so these
+ * numbers match the running app rather than a remembered approximation.
+ */
+
+/* --- page frame ---------------------------------------------------------- */
+
+/* The page is its own scroll surface, exactly like the Plugin manager page:
+   header, tabs and content all live in one centred column. */
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: 0 clamp(24px, 4vw, 48px) 48px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Every direct child is one 960px column, so the header, the tabs and the list
+   share the same optical edges. */
+.page > * {
+  width: 100%;
+  max-width: 960px;
+}
+
+.pageHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  box-sizing: border-box;
+  padding-top: 28px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.pageIntro {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex: none;
+}
+
+/* --- tab row and content ------------------------------------------------- */
+
+.tabRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tabSpacer {
+  flex: 1;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* The tab content's own toolbar (search + filters), right under the tabs. The
+   row spans the full column so a trailing action can sit on its right edge. */
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filterField {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+}
+
+/* Takes the slack between the bounded filter controls and the trailing
+   actions, so the actions land on the column's right edge rather than beside
+   the search box. */
+.filterSpacer {
+  flex: 1;
+}
+
+/* --- groups -------------------------------------------------------------- */
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.count {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The group's explanation, one quiet line under its heading. */
+.groupHint {
+  margin: -4px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* --- skill cards --------------------------------------------------------- */
+
+/* The cards list: rows sit 2px apart, on the page's own surface. */
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A card's hover surface reaches 8px past the content on both sides while the
+   row's content stays aligned with the page header. */
+.card {
+  min-width: 0;
+  margin: 0 -8px;
+  border-radius: var(--dsw-radius-xl);
+}
+
+.card:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px;
+}
+
+/* The 48px hairline frame every plugin row and card uses. */
+.cardIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-lg);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.cardMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A skill's name is an identifier, so it reads in the code face the shell uses
+   for module and row ids. */
+.cardId {
+  font-family: var(--ds-font-family-code);
+}
+
+/* The name doubles as the preview trigger, the way a shipped card's title is
+   the button that opens its page: no chrome of its own, and the whole card
+   answers the hover so the target reads as one surface. */
+.cardOpen {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  /* font: inherit resets the size, so the title's own size follows it. */
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cardOpen:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cardOpen:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+
+/* The one-line description: clamped, because a skill's own description can run
+   to several sentences and the card must stay one row tall. */
+.cardDesc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The file path under the description: quieter than it, clipped on overflow by
+   PathLabel itself. */
+.cardPath {
+  display: flex;
+  margin-top: 2px;
+}
+
+.cardEnd {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A card belonging to another workspace reads quieter than the active one. */
+.card[data-isolated] .cardHead {
+  opacity: 0.72;
+}
+
+.card[data-isolated]:hover .cardHead {
+  opacity: 1;
+}
+
+/* Inline failure for one card's last action. */
+.cardError {
+  margin: 0 8px 8px 70px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+/* --- forms --------------------------------------------------------------- */
+
+/* A form is one narrow column, so its fields line up with a comfortable
+   reading width rather than the full 960px. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The multi-line body editor is the one control this package draws: the
+   official library ships a single-line `Input` only. Its geometry follows the
+   plugin manager's own install field so it belongs to the same family. */
+.textarea {
+  box-sizing: border-box;
+  min-height: 180px;
+  padding: 10px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-3);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-primary);
+  resize: vertical;
+  outline: none;
+}
+
+.textarea:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.textarea::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Feedback line under a form. */
+.feedback {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.feedback[data-kind='ok'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.feedback[data-kind='error'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* --- states -------------------------------------------------------------- */
+
+/* Empty and loading share one shape: the shipped page's quiet status line. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.emptyIcon {
+  color: var(--dsw-alias-label-caption);
+}
+
+.emptyText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* --- skill preview dialog ------------------------------------------------ */
+
+/* Wider than the default dialog so a skill's instructions read at a
+   comfortable measure, and capped in height so the footer's controls stay
+   reachable while the body scrolls inside the card. */
+.previewDialog {
+  width: min(720px, 100%);
+  max-height: min(760px, 100%);
+}
+
+/* The renderer's own content region scrolls; the head and footer stay put. */
+.previewContent {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.previewBody {
+  min-width: 0;
+}
+
+/* The frontmatter fields, stated as a definition list above the body: the keys
+   quiet and fixed-width, the values readable. Rendering the raw YAML as markdown
+   would turn it into a heading and stray prose, because a leading `---` is a
+   thematic break in GFM. */
+.previewMetaList {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0 0 16px;
+  padding: 0 0 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.previewMetaKey {
+  margin: 0;
+  color: var(--dsw-alias-label-caption);
+  white-space: nowrap;
+}
+
+.previewMetaValue {
+  margin: 0;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.previewCode {
+  font-family: var(--ds-font-family-code);
+  font-size: 12.5px;
+}
+
+/* Loading and failure share the centred state shape. */
+.previewStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.previewFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+/* Where the previewed text came from: the file, or the skill registry. */
+.previewMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A failure above a list that still has its last-good content. */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
