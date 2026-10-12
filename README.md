@@ -25,8 +25,14 @@ skill registry on top, so what the panel shows is what the model receives.
 
 ## Skill market
 
-The Market tab searches online skill registries. Two sources:
+The Market tab searches online skill registries. Three sources, with
+**skillhub.cn as the default**:
 
+- **skillhub.cn** — a China-hosted skill store with 190,000+ skills, reachable
+  directly with no accelerator. The site actively invites agent integration: it
+  publishes `install/skillhub.md` for agents to read, allows every crawler in
+  robots.txt, and its whole read path is unauthenticated. Rows carry Chinese
+  descriptions, download counts and a relevance score.
 - **skills.sh** — the Agent Skills registry's search endpoint (unauthenticated,
   not rate limited as far as observed).
 - **GitHub repositories** — type `owner/repo` (a full URL or a `.git` suffix
@@ -34,9 +40,12 @@ The Market tab searches online skill registries. Two sources:
 
 Results use the same card anatomy as the local skills list; selecting a skill's
 name opens a detail dialog rendered by the shell's own markdown renderer, with
-the skill's file list beside the body. A source that is down degrades the page
-rather than blanking it: the remaining results still show, and the failed
-source is noted once above them.
+the skill's file list beside the body. **Every result states its licence** —
+declared ones show the licence (MIT, GPL-3.0, …), undeclared ones show "No
+licence declared": over half of a sampled catalogue declares none, and that is
+a fact a user needs before deciding to install. A source that is down degrades
+the page rather than blanking it: the remaining results still show, and the
+failed source is noted once above them.
 
 **Network policy** (each item a measured constraint — see M2 in the
 development plan):
@@ -44,9 +53,10 @@ development plan):
 - The unauthenticated GitHub API allows **60 requests/hour**, so only
   *discovery* (directory listing) touches it, cached for 30 minutes; file
   bodies come from raw.githubusercontent.com, which does not count against
-  that budget.
-- Skill bodies are fetched through a GitHub accelerator chain (direct first,
+  that budget. skillhub.cn does not touch GitHub at all.
+- GitHub skill bodies are fetched through an accelerator chain (direct first,
   then mirrors in order); the list is overridable in the plugin config.
+  skillhub.cn is reached directly.
 - The browser only ever sends back the **opaque skill id** the host issued;
   URLs, repositories and paths are re-derived host-side. The id grammar is
   validated segment by segment, so a path traversal is rejected before it can

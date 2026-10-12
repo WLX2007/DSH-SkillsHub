@@ -48,6 +48,9 @@ export const zh = {
   'market.field.files': '文件',
   'market.filesSummary': '{count} 个文件，共 {size}',
   'market.moreFiles': '还有 {count} 个文件',
+  'market.licence.declared': '许可证：{licence}',
+  'market.licence.undeclared': '未声明许可证',
+  'market.licence.field': '许可证',
 
   // --- Skills list ---
   'list.loading': '正在加载…',
@@ -183,6 +186,9 @@ export const en: Record<SkillsHubKey, string> = {
   'market.field.files': 'Files',
   'market.filesSummary': '{count} files, {size}',
   'market.moreFiles': '{count} more files',
+  'market.licence.declared': 'Licence: {licence}',
+  'market.licence.undeclared': 'No licence declared',
+  'market.licence.field': 'Licence',
 
   'list.loading': 'Loading…',
   'list.loadFailed': 'Failed to load: {error}',

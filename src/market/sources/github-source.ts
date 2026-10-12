@@ -82,22 +82,28 @@ export const githubSource: MarketSource = {
   },
 
   async detail(skill, ctx) {
-    if (skill.origin.dir === '') {
+    // A registry-hosted row cannot come from this source; a defensive guard,
+    // since the id decoder already dispatches by provider.
+    if (skill.origin.kind !== 'github') return undefined
+    let origin = skill.origin
+
+    if (origin.dir === '') {
       // A root-level origin cannot be a directory of files: a skill always
       // lives in a directory, so this row was never resolved. Without a tree
       // request there is no way to know where its SKILL.md sits, and guessing
       // paths against raw content would spray requests for nothing.
-      const tree = await listRepoTree(skill.origin, ctx)
+      const tree = await listRepoTree(origin, ctx)
       if (tree === undefined) return undefined
       const candidates = findSkills(tree).filter(entry => entry.name.toLowerCase() === skill.name.toLowerCase())
       const match = candidates[0]
       if (match === undefined) return undefined
-      skill = { ...skill, origin: { ...skill.origin, dir: match.dir } }
+      origin = { ...origin, dir: match.dir }
+      skill = { ...skill, origin }
     }
-    const relPath = skill.origin.dir === '' ? SKILL_FILE : `${skill.origin.dir}/${SKILL_FILE}`
+    const relPath = origin.dir === '' ? SKILL_FILE : `${origin.dir}/${SKILL_FILE}`
     let raw: string
     try {
-      raw = await readRawFile(skill.origin, relPath, ctx)
+      raw = await readRawFile(origin, relPath, ctx)
     } catch (error) {
       if (error instanceof MarketFetchError && error.code === 'status' && error.status === 404) return undefined
       throw error

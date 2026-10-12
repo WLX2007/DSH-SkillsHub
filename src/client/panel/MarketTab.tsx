@@ -33,6 +33,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   SkillsHubApi,
   type MarketDetail,
+  type MarketLicence,
   type MarketSkill,
   type MarketSourceInfo,
 } from '../api.ts'
@@ -197,6 +198,24 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
   )
 }
 
+/**
+ * The licence a skill declares, shown on the row.
+ *
+ * A declared licence is an informative tag; an undeclared one is a warning,
+ * because roughly half the catalogue declares nothing and copying those files
+ * is a decision the user should notice they are making. Both states render —
+ * an undeclared licence must not quietly read as "no licence information
+ * available yet".
+ *
+ * @param licence - what the skill declares, or that it declares nothing.
+ * @returns the tag.
+ */
+function LicenceTag({ licence }: { licence: MarketLicence }): React.JSX.Element {
+  return licence.state === 'declared'
+    ? <Tag tone="info">{tt('market.licence.declared', { licence: licence.licence })}</Tag>
+    : <Tag tone="warning">{tt('market.licence.undeclared')}</Tag>
+}
+
 /** One result row: the shipped card anatomy, opening the detail on its name. */
 function MarketRow({ skill, onOpen }: { skill: MarketSkill; onOpen: () => void }): React.JSX.Element {
   return (
@@ -215,12 +234,19 @@ function MarketRow({ skill, onOpen }: { skill: MarketSkill; onOpen: () => void }
             >
               {skill.name}
             </button>
+            {skill.licence !== undefined && (
+              <LicenceTag licence={skill.licence} />
+            )}
             <Tag tone="outline">{skill.sourceLabel}</Tag>
           </div>
           <span className={css.cardDesc} title={skill.description}>
             {skill.description !== '' ? skill.description : tt('market.noDescription')}
           </span>
-          <div className={css.cardPath}><PathLabel path={`${skill.origin.owner}/${skill.origin.repo}`} /></div>
+          <div className={css.cardPath}>
+            <PathLabel path={skill.origin.kind === 'skillhub'
+              ? `skillhub.cn/${skill.origin.slug}`
+              : `${skill.origin.owner}/${skill.origin.repo}`} />
+          </div>
         </div>
         <div className={css.cardEnd}>
           {skill.installs !== undefined && (
@@ -289,7 +315,9 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
           {skill !== undefined && (
             <div className={css.previewMeta}>
               <Tag tone="outline">{skill.provider}</Tag>
-              <PathLabel path={`${skill.origin.owner}/${skill.origin.repo}`} />
+              <PathLabel path={skill.origin.kind === 'skillhub'
+                ? `skillhub.cn/${skill.origin.slug}`
+                : `${skill.origin.owner}/${skill.origin.repo}`} />
             </div>
           )}
           <div className={css.formActions}>
@@ -314,6 +342,12 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
           <dl className={css.previewMetaList} data-dsh-part="preview-meta">
             <dt className={css.previewMetaKey}>{tt('preview.field.name')}</dt>
             <dd className={css.previewMetaValue}><code className={css.previewCode}>{detail.skill.name}</code></dd>
+            {detail.skill.licence !== undefined && (
+              <>
+                <dt className={css.previewMetaKey}>{tt('market.licence.field')}</dt>
+                <dd className={css.previewMetaValue}><LicenceTag licence={detail.skill.licence} /></dd>
+              </>
+            )}
             {detail.frontmatter.whenToUse !== undefined && detail.frontmatter.whenToUse !== '' && (
               <>
                 <dt className={css.previewMetaKey}>{tt('preview.field.whenToUse')}</dt>

@@ -128,12 +128,15 @@ function toMarketSkill(hit: SearchHit, ref: string): MarketSkill | undefined {
  *   the tree cannot be read.
  */
 export async function resolveOrigin(skill: MarketSkill, ctx: MarketSourceContext): Promise<MarketSkill> {
-  const tree = await listRepoTree(skill.origin, ctx)
+  // This source mints GitHub origins only; a foreign kind cannot be narrowed.
+  if (skill.origin.kind !== 'github') return skill
+  let origin = skill.origin
+  const tree = await listRepoTree(origin, ctx)
   if (tree === undefined) return skill
   const candidates = findSkills(tree).filter(entry => entry.name.toLowerCase() === skill.name.toLowerCase())
   const match = candidates[0]
   if (match === undefined) return skill
-  const origin = { ...skill.origin, dir: match.dir }
+  origin = { ...origin, dir: match.dir }
   return { ...skill, origin, id: encodeSkillId(skill.provider, origin) }
 }
 
@@ -144,10 +147,12 @@ export async function resolveOrigin(skill: MarketSkill, ctx: MarketSourceContext
  * @returns the detail, or undefined when the skill has no readable SKILL.md.
  */
 export async function readDetail(skill: MarketSkill, ctx: MarketSourceContext): Promise<MarketDetail | undefined> {
-  const relPath = skill.origin.dir === '' ? SKILL_FILE : `${skill.origin.dir}/${SKILL_FILE}`
+  if (skill.origin.kind !== 'github') return undefined
+  const origin = skill.origin
+  const relPath = origin.dir === '' ? SKILL_FILE : `${origin.dir}/${SKILL_FILE}`
   let raw: string
   try {
-    raw = await readRawFile(skill.origin, relPath, ctx)
+    raw = await readRawFile(origin, relPath, ctx)
   } catch {
     // A missing or unreadable SKILL.md means this is not a readable skill:
     // a normal answer for a stale registry hit, not an internal failure.
@@ -190,21 +195,18 @@ export async function listSkillFiles(
   skill: MarketSkill,
   ctx: MarketSourceContext,
 ): Promise<Array<{ path: string; size: number }>> {
-  try {
-    const tree = await listRepoTree(skill.origin, ctx)
-    if (tree === undefined) return []
-    const prefix = skill.origin.dir === '' ? '' : `${skill.origin.dir}/`
-    return tree
-      .filter(entry => entry.type === 'blob' && entry.path.startsWith(prefix))
-      .map(entry => ({
-        path: entry.path.slice(prefix.length),
-        size: entry.size ?? 0,
-      }))
-      .filter(file => file.path !== '')
-      .sort((left, right) => left.path.localeCompare(right.path))
-  } catch {
-    return []
-  }
+  if (skill.origin.kind !== 'github') return []
+  const tree = await listRepoTree(skill.origin, ctx)
+  if (tree === undefined) return []
+  const prefix = skill.origin.dir === '' ? '' : `${skill.origin.dir}/`
+  return tree
+    .filter(entry => entry.type === 'blob' && entry.path.startsWith(prefix))
+    .map(entry => ({
+      path: entry.path.slice(prefix.length),
+      size: entry.size ?? 0,
+    }))
+    .filter(file => file.path !== '')
+    .sort((left, right) => left.path.localeCompare(right.path))
 }
 
 /** The skills.sh source. */
@@ -244,7 +246,9 @@ export const skillsShSource: MarketSource = {
 
   async detail(skill, ctx) {
     // A registry row starts at the repository root, so the directory must be
-    // resolved before the files can be read.
+    // resolved before the files can be read. A non-GitHub origin cannot come
+    // from this source at all.
+    if (skill.origin.kind !== 'github') return undefined
     const resolved = skill.origin.dir === '' && skill.provider === 'skills-sh'
       ? await resolveOrigin(skill, ctx)
       : skill

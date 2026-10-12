@@ -21,9 +21,8 @@
 import type { FetchTextOptions } from './fetch.ts'
 import type { ProxyChain } from './proxy.ts'
 
-/** Where a skill's files live, in terms a raw fetch can address. */
-export interface MarketOrigin {
-  /** Hosting service; only GitHub is supported today. */
+/** The coordinates of a GitHub-hosted skill, addressed by raw fetch. */
+export interface GitHubOrigin {
   kind: 'github'
   owner: string
   repo: string
@@ -33,12 +32,39 @@ export interface MarketOrigin {
   dir: string
 }
 
+/** The coordinates of a registry-hosted skill, addressed by slug alone. */
+export interface SkillHubOrigin {
+  kind: 'skillhub'
+  slug: string
+}
+
+/**
+ * Where a skill's files live.
+ *
+ * Two shapes, because the two sources work fundamentally differently:
+ *
+ *  - `github` — files live in a repository, addressed by owner/repo/ref/dir and
+ *    read through raw.githubusercontent.com. A detail view must first resolve
+ *    the skill's directory from a tree listing.
+ *  - `skillhub` — the registry hosts the files itself, addressed by slug alone.
+ *    No repository, no ref, no accelerator: a detail view reads them straight
+ *    from the registry's own file endpoint, which is why this source needs
+ *    neither the GitHub budget nor the accelerator chain.
+ */
+export type MarketOrigin = GitHubOrigin | SkillHubOrigin
+
+/** The licence a skill declares in its own SKILL.md frontmatter. */
+export type MarketLicence =
+  | { state: 'declared'; licence: string }
+  | { state: 'undeclared' }
+
 /** One skill as the market layer serves it to the panel. */
 export interface MarketSkill {
   /**
    * Globally unique coordinate.
    *
-   * Form: `<provider>:<owner>/<repo>@<ref>:<dir>`. It is opaque to the client,
+   * Form depends on the origin kind: `<provider>:<owner>/<repo>@<ref>:<dir>`
+   * for GitHub, `skillhub:<slug>` for the registry. It is opaque to the client,
    * which sends it back verbatim; the host parses it to rebuild the origin
    * rather than trusting any URL the client supplies.
    */
@@ -55,6 +81,14 @@ export interface MarketSkill {
   origin: MarketOrigin
   /** Registry-reported install count, when the source publishes one. */
   installs?: number
+  /**
+   * The licence the skill declares, when the source reports one.
+   *
+   * Shown on the row because it is the fact a user needs before deciding to
+   * install: an undeclared licence is itself information, and hiding it would
+   * make the panel assert a permission nobody granted.
+   */
+  licence?: MarketLicence
 }
 
 /** One file inside a skill directory. */

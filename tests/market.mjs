@@ -227,4 +227,154 @@ await check('search hits become rows with HEAD refs and no path', async () => {
     'search must not touch the GitHub API')
 })
 
+console.log('\nskillhub.cn: the registry contract and the licence surface')
+
+// skillhubSource ships from lib/index.js (see tsdown.config.ts for why the
+// market layer is split across two entries).
+const { skillhubSource } = await import('../lib/index.js')
+
+const SLUG = 'pdf-image-text-extractor'
+const LIST_URL = `https://api.skillhub.cn/api/skills?page=1&pageSize=20&sortBy=score&keyword=${SLUG}`
+const REGISTRY_LIST = JSON.stringify({
+  code: 0,
+  data: {
+    total: 1,
+    skills: [{
+      slug: SLUG,
+      name: 'PDF和图片文字提取',
+      description: 'English description',
+      description_zh: '中文描述',
+      downloads: 210947,
+      verified: false,
+      source: 'community',
+    }],
+  },
+})
+const MANIFEST = JSON.stringify({
+  count: 2,
+  files: [
+    { path: 'SKILL.md', sha256: 'a'.repeat(64), size: 1500 },
+    { path: 'reference.md', sha256: 'b'.repeat(64), size: 500 },
+  ],
+})
+const SKILL_MD = [
+  '---',
+  `name: ${SLUG}`,
+  'description: Extract text from PDFs and images',
+  'license: MIT',
+  '---',
+  '',
+  '# Extract text',
+  '',
+  'Body of the skill.',
+].join('\n')
+
+await check('listing rows normalise with the Chinese description and download count', async () => {
+  const ctx = {
+    proxy: undefined,
+    signal: undefined,
+    fetchJson: async (url) => {
+      assert.ok(url.startsWith('https://api.skillhub.cn/api/skills'), `unexpected JSON url: ${url}`)
+      return JSON.parse(REGISTRY_LIST)
+    },
+    fetchText: async () => { throw new Error('search must not fetch text') },
+  }
+  const rows = await skillhubSource.search(SLUG, 20, ctx)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].name, 'PDF和图片文字提取')
+  // The Chinese description wins over the English one: this source's users
+  // read it, which is also why the source ranks first in the merge.
+  assert.equal(rows[0].description, '中文描述')
+  assert.equal(rows[0].installs, 210947)
+  assert.equal(rows[0].sourceLabel, 'skillhub.cn')
+  assert.equal(rows[0].origin.kind, 'skillhub')
+  assert.equal(rows[0].origin.slug, SLUG)
+  assert.match(rows[0].id, /^skillhub:pdf-image-text-extractor$/)
+})
+
+await check('a non-zero registry code surfaces as an error, not an empty page', async () => {
+  const ctx = {
+    proxy: undefined,
+    signal: undefined,
+    fetchJson: async () => ({ code: 401, message: 'denied' }),
+    fetchText: async () => { throw new Error('unreachable') },
+  }
+  await assert.rejects(
+    () => skillhubSource.search('pdf', 20, ctx),
+    /listing failed: denied/,
+  )
+})
+
+await check('detail reads the manifest and SKILL.md and reports the licence', async () => {
+  const textCalls = []
+  const ctx = {
+    proxy: undefined,
+    signal: undefined,
+    fetchJson: async (url) => {
+      if (url.endsWith('/files')) return JSON.parse(MANIFEST)
+      if (url.endsWith(`/api/v1/skills/${SLUG}`)) {
+        return { skill: { slug: SLUG, summary: 'Registry summary' } }
+      }
+      // The detail flow first re-derives the row through a search (see
+      // rowForId), so the listing is expected here too.
+      if (url.startsWith('https://api.skillhub.cn/api/skills')) return JSON.parse(REGISTRY_LIST)
+      throw new Error(`unexpected JSON url: ${url}`)
+    },
+    fetchText: async (url) => {
+      textCalls.push(url)
+      if (url.endsWith('/file?path=SKILL.md')) return SKILL_MD
+      throw new Error(`unexpected text url: ${url}`)
+    },
+  }
+  const row = (await skillhubSource.search(SLUG, 20, ctx))[0]
+  const detail = await skillhubSource.detail(row, ctx)
+  assert.ok(detail, 'the skill should resolve')
+  assert.equal(detail.body, '# Extract text\n\nBody of the skill.')
+  assert.equal(detail.frontmatter.description, 'Extract text from PDFs and images')
+  assert.equal(detail.files.length, 2)
+  assert.equal(detail.totalBytes, 2000)
+  // The licence travels on the row: an undeclared one is information, and
+  // hiding it would assert a permission nobody granted.
+  assert.deepEqual(detail.skill.licence, { state: 'declared', licence: 'MIT' })
+  // The whole detail is registry-only: no GitHub, no accelerator, no proxy.
+  for (const url of textCalls) {
+    assert.ok(url.startsWith('https://api.skillhub.cn/'), `detail left the registry: ${url}`)
+  }
+})
+
+await check('an undeclared licence is reported as such, not defaulted', async () => {
+  const noLicence = SKILL_MD.replace('license: MIT\n', '')
+  const ctx = {
+    proxy: undefined,
+    signal: undefined,
+    fetchJson: async (url) => {
+      if (url.endsWith('/files')) return JSON.parse(MANIFEST)
+      if (url.startsWith('https://api.skillhub.cn/api/skills')) return JSON.parse(REGISTRY_LIST)
+      return {}
+    },
+    fetchText: async () => noLicence,
+  }
+  const row = (await skillhubSource.search(SLUG, 20, ctx))[0]
+  const detail = await skillhubSource.detail(row, ctx)
+  assert.deepEqual(detail.skill.licence, { state: 'undeclared' })
+})
+
+await check('detail of a foreign-origin row is refused', async () => {
+  const ctx = {
+    proxy: undefined,
+    signal: undefined,
+    fetchJson: async () => { throw new Error('must not fetch') },
+    fetchText: async () => { throw new Error('must not fetch') },
+  }
+  const detail = await skillhubSource.detail({
+    id: 'github:anthropics/skills@HEAD:skills/pdf',
+    name: 'pdf',
+    description: '',
+    provider: 'skillhub',
+    sourceLabel: 'anthropics/skills',
+    origin: { kind: 'github', owner: 'anthropics', repo: 'skills', ref: 'HEAD', dir: 'skills/pdf' },
+  }, ctx)
+  assert.equal(detail, undefined)
+})
+
 console.log(`\n${passed} checks passed${failures.length > 0 ? `, ${failures.length} failed` : ''}`)

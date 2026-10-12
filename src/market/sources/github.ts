@@ -18,7 +18,7 @@
  */
 
 import { MarketFetchError } from '../fetch.ts'
-import type { MarketSourceContext, MarketOrigin } from '../types.ts'
+import type { MarketSourceContext, MarketOrigin, GitHubOrigin } from '../types.ts'
 
 /** One entry from the Contents API. */
 interface ContentsEntry {
@@ -82,7 +82,7 @@ export async function defaultBranch(owner: string, repo: string, ctx: MarketSour
  * @param ctx - fetchers and signal.
  * @returns the file entries, or undefined when the ref does not resolve.
  */
-export async function listRepoTree(origin: MarketOrigin, ctx: MarketSourceContext): Promise<TreeEntry[] | undefined> {
+export async function listRepoTree(origin: GitHubOrigin, ctx: MarketSourceContext): Promise<TreeEntry[] | undefined> {
   const url = `https://api.github.com/repos/${encodeURIComponent(origin.owner)}/${encodeURIComponent(origin.repo)}`
     + `/git/trees/${encodeURIComponent(origin.ref)}?recursive=1`
   try {
@@ -158,7 +158,7 @@ export function findSkills(tree: readonly TreeEntry[], subPath = ''): Discovered
  * @param ctx - fetchers and signal.
  * @returns the entries, or an empty array when the directory is gone.
  */
-export async function listDir(origin: MarketOrigin, ctx: MarketSourceContext): Promise<ContentsEntry[]> {
+export async function listDir(origin: GitHubOrigin, ctx: MarketSourceContext): Promise<ContentsEntry[]> {
   const path = origin.dir === '' ? '' : `/${origin.dir}`
   const url = `https://api.github.com/repos/${encodeURIComponent(origin.owner)}/${encodeURIComponent(origin.repo)}`
     + `/contents${path}?ref=${encodeURIComponent(origin.ref)}`
@@ -186,7 +186,7 @@ export async function listDir(origin: MarketOrigin, ctx: MarketSourceContext): P
  * @param relPath - repository-relative file path.
  * @returns the direct raw URL.
  */
-export function rawUrl(origin: MarketOrigin, relPath: string): string {
+export function rawUrl(origin: GitHubOrigin, relPath: string): string {
   const encoded = relPath.split('/').map(encodeURIComponent).join('/')
   return `https://raw.githubusercontent.com/${origin.owner}/${origin.repo}/${encodeURIComponent(origin.ref)}/${encoded}`
 }
@@ -198,7 +198,7 @@ export function rawUrl(origin: MarketOrigin, relPath: string): string {
  * @param ctx - proxy chain and signal.
  * @returns the file text.
  */
-export async function readRawFile(origin: MarketOrigin, relPath: string, ctx: MarketSourceContext): Promise<string> {
+export async function readRawFile(origin: GitHubOrigin, relPath: string, ctx: MarketSourceContext): Promise<string> {
   return ctx.fetchText(rawUrl(origin, relPath), {
     signal: ctx.signal,
     timeoutMs: 25_000,

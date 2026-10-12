@@ -29,6 +29,9 @@ const DIR_RE = /^$|^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/
 /** Provider ids are short lowercase identifiers. */
 const PROVIDER_RE = /^[a-z0-9][a-z0-9-]{0,31}$/
 
+/** A registry slug: lowercase, digits, dots, hyphens — what skillhub.cn mints. */
+const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,119}$/
+
 /**
  * Whether a value is a usable GitHub owner or repository segment.
  * @param value - candidate.
@@ -59,10 +62,13 @@ export function isRepoDir(value: string): boolean {
 /**
  * Build the opaque id for one skill.
  * @param provider - the source that produced it.
- * @param origin - its repository coordinates.
+ * @param origin - its coordinates.
  * @returns the id.
  */
 export function encodeSkillId(provider: string, origin: MarketOrigin): string {
+  // A registry-hosted skill has no repository: the slug alone identifies it,
+  // and the rest of the GitHub-shaped id would be pure padding.
+  if (origin.kind === 'skillhub') return `${provider}:${origin.slug}`
   return `${provider}:${origin.owner}/${origin.repo}@${origin.ref}:${origin.dir}`
 }
 
@@ -77,7 +83,13 @@ export interface DecodedSkillId {
  *
  * Every part is validated, so a malformed or hostile id is rejected here rather
  * than reaching a fetch. This is the only place a client-supplied id becomes
- * repository coordinates.
+ * coordinates.
+ *
+ * Two shapes decode, matching the two origin kinds:
+ *
+ *   `<provider>:<owner>/<repo>@<ref>:<dir>`  — a GitHub-hosted skill;
+ *   `<provider>:<slug>`                      — a registry-hosted skill, which
+ *      has no `@` and no second colon, and whose slug grammar is enforced.
  *
  * @param id - the opaque id from the client.
  * @returns the decoded parts, or undefined when the id is not well formed.
@@ -89,6 +101,14 @@ export function decodeSkillId(id: string): DecodedSkillId | undefined {
   if (!PROVIDER_RE.test(provider)) return undefined
 
   const rest = id.slice(colon + 1)
+  if (rest === '') return undefined
+
+  // Registry-hosted form: no `@`, no second colon, just the slug.
+  if (!rest.includes('@')) {
+    if (!SLUG_RE.test(rest)) return undefined
+    return { provider, origin: { kind: 'skillhub', slug: rest } }
+  }
+
   const at = rest.lastIndexOf('@')
   if (at <= 0) return undefined
   const repoPath = rest.slice(0, at)
@@ -114,12 +134,14 @@ export function decodeSkillId(id: string): DecodedSkillId | undefined {
 }
 
 /**
- * Normalise an id for comparison: providers may report the same repository at
- * different refs, and a de-duplicated list should not show a skill twice.
+ * Normalise an id for comparison: providers may report the same skill, and a
+ * de-duplicated list should not show it twice.
  * @param skill - the row.
  * @returns a stable identity key.
  */
 export function skillIdentity(skill: MarketSkill): string {
   const { origin } = skill
-  return `${origin.owner}/${origin.repo}:${origin.dir}`.toLowerCase()
+  return origin.kind === 'skillhub'
+    ? `skillhub:${origin.slug}`.toLowerCase()
+    : `${origin.owner}/${origin.repo}:${origin.dir}`.toLowerCase()
 }

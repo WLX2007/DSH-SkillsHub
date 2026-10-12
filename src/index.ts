@@ -45,6 +45,7 @@ export type { SkillsHubRouteDeps }
  * see tsdown.config.ts), which is what the tests import.
  */
 export { skillsShSource, resolveOrigin as resolveSkillOrigin } from './market/sources/skills-sh.ts'
+export { skillhubSource } from './market/sources/skillhub-cn.ts'
 /** Plugin config (profile patch / settings surface). */
 export interface Config {
   /** Master switch for the route family. */

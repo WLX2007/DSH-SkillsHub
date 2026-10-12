@@ -113,6 +113,23 @@ nightly 通道下 tag 与已装版本可能不同，要核验再照抄。
 - 正文用官方 `MarkdownText` + 官方 `Modal`。`labels` 必须 `useMemo` 稳定引用，
   否则渲染器每次 render 都丢弃解析缓存。
 
+## 市场源
+
+- **SkillHub（skillhub.cn）是默认源**，注册顺序第一。依据是实测而非假设：站点发布
+  `install/skillhub.md` 明确邀请 Agent 集成（自称"国内优先、加速、合规"），robots.txt 全开放，
+  读写路径全程无鉴权，且国内直连无需加速节点。嵌入前已核对这四点。
+- 两类 origin **形状不同**：GitHub 按 `owner/repo@ref:dir` 走 raw，SkillHub 按 `slug` 走
+  注册站自己的文件端点。GitHub 原语（`listRepoTree`/`readRawFile`…）的签名收窄为
+  `GitHubOrigin`，不要放宽回联合类型——那会把"这个函数只处理仓库"的约定抹掉。
+- **许可证必须如实显示**。抽样 12 个热门技能，7 个未声明许可证（MIT 3、GPL-3.0 2）。
+  `licenceOf` 读 SKILL.md frontmatter 的 `license` 字段（自己的行匹配，别往
+  `parseFrontmatter` 里加字段——那是本地面板要改写的字段的契约）；声明了就显示，
+  没声明就显示"未声明许可证"，**不要**把缺失默认成某个许可。
+- 安装（M3）是把文件复制到磁盘的动作，义务提示在那时给用户；搜索与展示本身
+  是平台明示许可的行为。
+- **tsdown 多入口**：market 模块从 `lib/market.js`（伴生入口）导出，因为从 index.ts
+  重导出会被折叠（详见 tsdown.config.ts 注释）。测试从 `lib/market.js` 导入 `Market`。
+
 ## 测试纪律
 
 - `tests/m0-smoke.mjs`：按宿主的方式加载两个 bundle，断言 loader 合约、注入的 `require`、
@@ -125,3 +142,7 @@ nightly 通道下 tag 与已装版本可能不同，要核验再照抄。
   960px 列与 20px 标题、描述 clamp 一行。改 UI 后必须全绿，并**用负向控制验证过**
   （把缺陷改回去，守卫必须失败）。扫描前会剥掉注释，否则解释「为什么不用某个写法」
   的注释本身会被误报成违规。
+- `tests/market.mjs`：**fake transport，零网络**。聚合/去重/排序、id 文法（含 4 种路径
+  逃逸）、skills.sh 与 skillhub.cn 的响应契约。M3 改安装逻辑时在这里加断言。
+- `tests/market-live.mjs`：**手动跑的**真网络冒烟，不进自动套件。验证默认源真的在出结果、
+  详情真的能解析。搜不到东西时先跑它再怀疑代码。

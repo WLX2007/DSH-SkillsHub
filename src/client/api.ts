@@ -139,8 +139,8 @@ export interface SkillPreview {
 
 // --- Market (M2) -----------------------------------------------------------
 
-/** Where a market skill's files live. */
-export interface MarketOrigin {
+/** The coordinates of a GitHub-hosted market skill. */
+export interface GitHubOrigin {
   kind: 'github'
   owner: string
   repo: string
@@ -148,6 +148,20 @@ export interface MarketOrigin {
   /** Repository-relative directory holding SKILL.md, '' for the repo root. */
   dir: string
 }
+
+/** The coordinates of a registry-hosted market skill, addressed by slug alone. */
+export interface SkillHubOrigin {
+  kind: 'skillhub'
+  slug: string
+}
+
+/** Where a market skill's files live. */
+export type MarketOrigin = GitHubOrigin | SkillHubOrigin
+
+/** The licence a skill declares in its own SKILL.md frontmatter. */
+export type MarketLicence =
+  | { state: 'declared'; licence: string }
+  | { state: 'undeclared' }
 
 /** One skill as a market source serves it. */
 export interface MarketSkill {
@@ -161,6 +175,11 @@ export interface MarketSkill {
   sourceLabel: string
   origin: MarketOrigin
   installs?: number
+  /**
+   * What the skill declares, when its source reports it. An undeclared licence
+   * is shown as such: it is the fact a user needs before copying a skill.
+   */
+  licence?: MarketLicence
 }
 
 /** One file inside a market skill. */

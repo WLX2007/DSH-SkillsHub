@@ -2,7 +2,7 @@
  * The market: the source registry and the search aggregation.
  *
  * One instance owns every source and the caches behind them. Its `search`
- * fans a query out across the searchable sources, de-duplicates by repository
+ * fans a query out across the searchable sources, de-duplicates by skill
  * coordinate, and trims to the requested limit — so two registries that both
  * index the same skill produce one row, not two.
  *
@@ -11,9 +11,18 @@
  * must degrade the page rather than blank it. The panel shows the note, and the
  * next search retries that source only.
  *
+ * SkillHub (skillhub.cn) is registered FIRST and is the default source. Two
+ * reasons, both measured rather than assumed: it answers plainly from this
+ * network where the GitHub-backed sources need an accelerator, and the
+ * registry itself publishes an agent-facing integration document
+ * (`skillhub.cn/install/skillhub.md`) that asks to be the preferred source.
+ * Its rows are also the only ones carrying a Chinese description.
+ *
  * @module @wulongxi/dsh-skills-hub/market/registry
  */
 
+import { skillhubSource } from './sources/skillhub-cn.ts'
+import { SKILLHUB_API_BASE } from './sources/skillhub-cn.ts'
 import { ProxyChain, DEFAULT_PROXIES } from './proxy.ts'
 import { fetchJson, fetchText, MarketFetchError, type FetchTextOptions } from './fetch.ts'
 import { TtlCache, createMarketCaches, type MarketCaches } from './cache.ts'
@@ -72,6 +81,9 @@ export class Market {
     this.caches = options.caches ?? createMarketCaches()
     this.proxy = new ProxyChain(options.proxies ?? DEFAULT_PROXIES)
     if (options.builtins !== false) {
+      // SkillHub first: it is the default source (see the module comment), and
+      // registration order is the order listSources() reports to the panel.
+      this.register(skillhubSource)
       this.register(skillsShSource)
       this.register(githubSource)
     }
@@ -147,9 +159,11 @@ export class Market {
         }),
     )
 
-    // De-duplicate by repository coordinate: two registries indexing the same
-    // skill must produce one row. Registry rows win over a bare GitHub listing
-    // because they carry an install count.
+    // De-duplicate by skill coordinate: two registries indexing the same skill
+    // must produce one row. The winner carries the most information, decided
+    // in order — a known install count, a higher one, a description, then a
+    // declared licence. A tie keeps the earlier row, which is the default
+    // source's, so SkillHub rows win when everything else is equal.
     const byIdentity = new Map<string, MarketSkill>()
     const counts: Record<string, number> = {}
     const failures: SearchOutcome['failures'] = []
@@ -167,12 +181,10 @@ export class Market {
           byIdentity.set(key, row)
           continue
         }
-        // Prefer the row that carries more information, in order: a known
-        // install count over none, a higher count over a lower one, then a
-        // description. The winner keeps its own provider id.
         const better = (existing.installs === undefined && row.installs !== undefined)
           || ((existing.installs ?? -1) < (row.installs ?? -1))
           || (existing.description === '' && row.description !== '')
+          || (existing.licence === undefined && row.licence !== undefined)
         if (better) byIdentity.set(key, row)
       }
     }
@@ -256,7 +268,11 @@ export class Market {
       // row is rebuilt from the origin the id already encodes.
       return this.rowFromIdParts(id, decoded.provider)
     }
-    const name = decoded.origin.dir.split('/').pop() ?? ''
+    // The name a search is keyed by differs per origin kind: a GitHub skill is
+    // named by its directory, a registry skill by its slug.
+    const name = decoded.origin.kind === 'skillhub'
+      ? decoded.origin.slug
+      : decoded.origin.dir.split('/').pop() ?? ''
     const hits = await this.caches.search.resolve(
       this.searchCacheKey(source.name, name, 20),
       () => source.search(name, 20, ctx),
@@ -279,23 +295,27 @@ export class Market {
     const { origin } = parsed
     return {
       id,
-      name: origin.dir.split('/').pop() ?? '',
+      name: origin.kind === 'skillhub'
+        ? origin.slug
+        : origin.dir.split('/').pop() ?? '',
       description: '',
       provider,
-      sourceLabel: `${origin.owner}/${origin.repo}`,
+      sourceLabel: origin.kind === 'skillhub' ? 'skillhub.cn' : `${origin.owner}/${origin.repo}`,
       origin,
     }
   }
 
   /**
-   * Read one raw file inside a skill's repository, through the accelerator
-   * chain.
+   * Read one file belonging to a market skill.
    *
    * This is the market's file-read seam, used by the preview and later by the
    * installer; like every route it accepts an id, never a client-supplied URL.
+   * The transport follows the origin kind: a GitHub skill reads raw content
+   * through the accelerator chain, a SkillHub skill reads the registry's own
+   * file endpoint, which needs no proxy at all.
    *
    * @param id - the opaque skill id.
-   * @param relPath - repository-relative path.
+   * @param relPath - path relative to the skill's root.
    * @param signal - caller cancellation.
    * @returns the file text.
    */
@@ -303,7 +323,12 @@ export class Market {
     const decoded = decodeId(id)
     if (decoded === undefined) throw new MarketFetchError('parse', `unknown skill id: ${id}`)
     const ctx = this.context(signal)
-    return ctx.fetchText(rawUrlFor(decoded.origin, relPath), { signal, maxBytes: 2 * 1024 * 1024 })
+    const { origin } = decoded
+    if (origin.kind === 'skillhub') {
+      const url = `${SKILLHUB_API_BASE}/api/v1/skills/${encodeURIComponent(origin.slug)}/file?path=${encodeURIComponent(relPath)}`
+      return ctx.fetchText(url, { signal, maxBytes: 2 * 1024 * 1024 })
+    }
+    return ctx.fetchText(rawUrlFor(origin, relPath), { signal, maxBytes: 2 * 1024 * 1024 })
   }
 }
 
