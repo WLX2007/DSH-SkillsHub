@@ -47,6 +47,13 @@ export interface SearchOutcome {
   counts: Record<string, number>
   /** Sources that failed, with the reason. */
   failures: Array<{ source: string; message: string }>
+  /**
+   * Whether at least one source can serve a page after this one. False does
+   * not mean "the catalogue is exhausted" — a source that cannot page at all
+   * (skills.sh) reports false for every page — so the panel words its end
+   * state as "该来源没有更多结果", not "没有更多结果".
+   */
+  hasMore: boolean
 }
 
 /**
@@ -126,8 +133,8 @@ export class Market {
   }
 
   /** Read through the search cache, keyed by the whole query. */
-  private searchCacheKey(source: string, query: string, limit: number): string {
-    return `${source}|${query.trim().toLowerCase()}|${limit}`
+  private searchCacheKey(source: string, query: string, limit: number, page: number): string {
+    return `${source}|${query.trim().toLowerCase()}|${limit}|p${page}`
   }
 
   /**
@@ -139,13 +146,17 @@ export class Market {
    * which keeps the fan-out and de-duplication rules in one place for a caller
    * that does want both registries at once.
    *
+   * A source that cannot page answers page 2+ with an empty page and
+   * `hasMore: false`, so "load more" ends cleanly rather than repeating rows.
+   *
    * @param query - free text.
    * @param limit - maximum rows in the result.
    * @param signal - caller cancellation.
    * @param source - the source to search, or undefined for all of them.
+   * @param page - one-based page number; "load more" asks for page 2, 3, …
    * @returns rows plus per-source counts and failures.
    */
-  async search(query: string, limit: number, signal?: AbortSignal, source?: string): Promise<SearchOutcome> {
+  async search(query: string, limit: number, signal?: AbortSignal, source?: string, page = 1): Promise<SearchOutcome> {
     const ctx = this.context(signal)
     const targets = this.listSources().filter(candidate =>
       // A named source is searched even if it reports itself unsearchable —
@@ -159,18 +170,18 @@ export class Market {
     }
 
     const perSource = await Promise.all(
-      targets.map(async (source): Promise<{ name: string; rows: MarketSkill[]; error?: string }> => {
+      targets.map(async (candidate): Promise<{ name: string; rows: MarketSkill[]; hasMore: boolean; error?: string }> => {
         try {
-          const rows = await this.caches.search.resolve(
-            this.searchCacheKey(source.name, query, limit),
-            () => source.search(query, limit, ctx),
+          // The cache key carries the page: "load more" must not be answered
+          // with page one from the cache.
+          const cached = await this.caches.search.resolve(
+            this.searchCacheKey(candidate.name, query, limit, page),
+            () => candidate.search(query, limit, ctx, page),
           )
-          // A source may hand back a readonly array; the merge below builds
-          // its own list, so the copy here is only to satisfy the type.
-          return { name: source.name, rows: [...rows] }
+          return { name: candidate.name, rows: [...cached.rows], hasMore: cached.hasMore }
         } catch (error) {
           const message = error instanceof MarketFetchError ? `${error.code}: ${error.message}` : String(error)
-          return { name: source.name, rows: [], error: message }
+          return { name: candidate.name, rows: [], hasMore: false, error: message }
         }
       }),
     )
@@ -183,13 +194,15 @@ export class Market {
     const byIdentity = new Map<string, MarketSkill>()
     const counts: Record<string, number> = {}
     const failures: SearchOutcome['failures'] = []
+    let hasMore = false
 
-    for (const { name, rows, error } of perSource) {
+    for (const { name, rows, hasMore: more, error } of perSource) {
       if (error !== undefined) {
         failures.push({ source: name, message: error })
         continue
       }
       counts[name] = rows.length
+      if (more) hasMore = true
       for (const row of rows) {
         const key = skillIdentity(row)
         const existing = byIdentity.get(key)
@@ -216,7 +229,7 @@ export class Market {
       })
       .slice(0, limit)
 
-    return { skills, counts, failures }
+    return { skills, counts, failures, hasMore }
   }
 
   /**
@@ -289,11 +302,11 @@ export class Market {
     const name = decoded.origin.kind === 'skillhub'
       ? decoded.origin.slug
       : decoded.origin.dir.split('/').pop() ?? ''
-    const hits = await this.caches.search.resolve(
-      this.searchCacheKey(source.name, name, 20),
-      () => source.search(name, 20, ctx),
+    const page = await this.caches.search.resolve(
+      this.searchCacheKey(source.name, name, 20, 1),
+      () => source.search(name, 20, ctx, 1),
     )
-    const match = hits.find(row => row.id === id)
+    const match = page.rows.find(row => row.id === id)
     return match ?? this.rowFromIdParts(id, decoded.provider)
   }
 

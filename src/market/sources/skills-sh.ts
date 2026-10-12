@@ -213,13 +213,20 @@ export async function listSkillFiles(
 export const skillsShSource: MarketSource = {
   name: 'skills-sh',
   searchable: true,
+  // Verified: the registry accepts an `offset` parameter but ignores it, so
+  // only the first page exists. Declaring that honestly is what lets the
+  // panel say "no more results" instead of re-serving the same page.
+  pageable: false,
 
-  async search(query, limit, ctx) {
+  async search(query, limit, ctx, page) {
     const wasEmpty = query.trim() === ''
     // The registry has no "list everything" mode; an empty query would return
     // its own unfiltered page, so an empty search is answered with nothing
     // rather than a surprise dump.
-    if (wasEmpty) return []
+    if (wasEmpty) return { rows: [], hasMore: false }
+    // A page beyond the first would silently return page one again, which a
+    // panel would render as duplicate rows.
+    if (page !== undefined && page > 1) return { rows: [], hasMore: false }
 
     const payload = await ctx.fetchJson<SearchResponse>(searchUrl(query.trim(), limit), {
       signal: ctx.signal,
@@ -241,7 +248,7 @@ export const skillsShSource: MarketSource = {
       seen.add(key)
       rows.push(row)
     }
-    return rows
+    return { rows, hasMore: false }
   },
 
   async detail(skill, ctx) {

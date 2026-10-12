@@ -158,6 +158,24 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The tail of the results: the loading shimmer, the "load more" control, or
+   the end-of-list line — one of the three, always, so the list never ends in
+   an unexplained silence. */
+.marketTail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 0 4px;
+  margin: 0;
+}
+
+.marketTailText {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .filterField {
   flex: 1;
   min-width: 0;

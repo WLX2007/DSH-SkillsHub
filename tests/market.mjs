@@ -67,15 +67,18 @@ await check('search fans out and returns normalised rows', async () => {
     searchable: true,
     async search(query, limit) {
       seen.push({ query, limit })
-      return [{
-        id: 'stub:anthropics/skills@HEAD:skills/pdf',
-        name: 'pdf',
-        description: 'PDF handling',
-        provider: 'stub',
-        sourceLabel: 'anthropics/skills',
-        origin: { kind: 'github', owner: 'anthropics', repo: 'skills', ref: 'HEAD', dir: 'skills/pdf' },
-        installs: 100,
-      }]
+      return {
+        rows: [{
+          id: 'stub:anthropics/skills@HEAD:skills/pdf',
+          name: 'pdf',
+          description: 'PDF handling',
+          provider: 'stub',
+          sourceLabel: 'anthropics/skills',
+          origin: { kind: 'github', owner: 'anthropics', repo: 'skills', ref: 'HEAD', dir: 'skills/pdf' },
+          installs: 100,
+        }],
+        hasMore: false,
+      }
     },
     async detail(skill) {
       return { skill, body: 'b', frontmatter: {}, files: [], totalBytes: 0 }
@@ -115,8 +118,8 @@ await check('the same skill from two sources appears once', async () => {
     sourceLabel: 'anthropics/skills',
     origin: { kind: 'github', owner: 'anthropics', repo: 'skills', ref: 'HEAD', dir: 'skills/pdf' },
   }
-  market.register({ name: 'a', searchable: true, async search() { return [{ ...row, id: 'a', provider: 'a', installs: 5 }] }, async detail() { return undefined } })
-  market.register({ name: 'b', searchable: true, async search() { return [{ ...row, id: 'b', provider: 'b', installs: 9 }] }, async detail() { return undefined } })
+  market.register({ name: 'a', searchable: true, async search() { return { rows: [{ ...row, id: 'a', provider: 'a', installs: 5 }], hasMore: false } }, async detail() { return undefined } })
+  market.register({ name: 'b', searchable: true, async search() { return { rows: [{ ...row, id: 'b', provider: 'b', installs: 9 }], hasMore: false } }, async detail() { return undefined } })
   const outcome = await market.search('pdf', 20)
   assert.equal(outcome.skills.length, 1, 'the same repository coordinate must collapse to one row')
   assert.equal(outcome.skills[0].installs, 9, 'the richer row wins')
@@ -136,7 +139,12 @@ await check('results rank by install count, then by name', async () => {
   market.register({
     name: 'x',
     searchable: true,
-    async search() { return [mk('zebra', undefined), mk('alpha', 1), mk('mid', 50), mk('beta', 50)] },
+    async search() {
+      return {
+        rows: [mk('zebra', undefined), mk('alpha', 1), mk('mid', 50), mk('beta', 50)],
+        hasMore: false,
+      }
+    },
     async detail() { return undefined },
   })
   const outcome = await market.search('q', 20)
@@ -149,15 +157,18 @@ await check('the limit bounds the merged result', async () => {
     name: 'x',
     searchable: true,
     async search() {
-      return Array.from({ length: 30 }, (_, i) => ({
-        id: `x:${i}`,
-        name: `s${i}`,
-        description: '',
-        provider: 'x',
-        sourceLabel: 'r',
-        origin: { kind: 'github', owner: 'o', repo: `r${i}`, ref: 'HEAD', dir: '' },
-        installs: 30 - i,
-      }))
+      return {
+        rows: Array.from({ length: 30 }, (_, i) => ({
+          id: `x:${i}`,
+          name: `s${i}`,
+          description: '',
+          provider: 'x',
+          sourceLabel: 'r',
+          origin: { kind: 'github', owner: 'o', repo: `r${i}`, ref: 'HEAD', dir: '' },
+          installs: 30 - i,
+        })),
+        hasMore: false,
+      }
     },
     async detail() { return undefined },
   })
@@ -177,7 +188,7 @@ function trackingSource(name, rows) {
       searchable: true,
       async search(query, limit) {
         asked.push({ query, limit })
-        return rows
+        return { rows, hasMore: false }
       },
       async detail() { return undefined },
     },
@@ -285,7 +296,9 @@ await check('search hits become rows with HEAD refs and no path', async () => {
     fetchJson: async (url) => fake(url),
     fetchText: async (url) => fake(url),
   }
-  const rows = await skillsShSource.search('pdf', 20, ctx)
+  const page = await skillsShSource.search('pdf', 20, ctx)
+  assert.equal(page.hasMore, false, 'skills.sh cannot page, and says so')
+  const rows = page.rows
   assert.equal(rows.length, 2)
   assert.equal(rows[0].name, 'pdf')
   assert.equal(rows[0].origin.owner, 'anthropics')
@@ -310,7 +323,9 @@ const LIST_URL = `https://api.skillhub.cn/api/skills?page=1&pageSize=20&sortBy=s
 const REGISTRY_LIST = JSON.stringify({
   code: 0,
   data: {
-    total: 1,
+    // More than the one row served, so the adapter must report that a next
+    // page exists — the fact the panel's "load more" control depends on.
+    total: 42,
     skills: [{
       slug: SLUG,
       name: 'PDF和图片文字提取',
@@ -351,7 +366,9 @@ await check('listing rows normalise with the Chinese description and download co
     },
     fetchText: async () => { throw new Error('search must not fetch text') },
   }
-  const rows = await skillhubSource.search(SLUG, 20, ctx)
+  const page = await skillhubSource.search(SLUG, 20, ctx)
+  assert.equal(page.hasMore, true, 'skillhub.cn pages natively and reports a next page')
+  const rows = page.rows
   assert.equal(rows.length, 1)
   assert.equal(rows[0].name, 'PDF和图片文字提取')
   // The Chinese description wins over the English one: this source's users
@@ -398,7 +415,7 @@ await check('detail reads the manifest and SKILL.md and reports the licence', as
       throw new Error(`unexpected text url: ${url}`)
     },
   }
-  const row = (await skillhubSource.search(SLUG, 20, ctx))[0]
+  const row = (await skillhubSource.search(SLUG, 20, ctx)).rows[0]
   const detail = await skillhubSource.detail(row, ctx)
   assert.ok(detail, 'the skill should resolve')
   assert.equal(detail.body, '# Extract text\n\nBody of the skill.')
@@ -426,7 +443,7 @@ await check('an undeclared licence is reported as such, not defaulted', async ()
     },
     fetchText: async () => noLicence,
   }
-  const row = (await skillhubSource.search(SLUG, 20, ctx))[0]
+  const row = (await skillhubSource.search(SLUG, 20, ctx)).rows[0]
   const detail = await skillhubSource.detail(row, ctx)
   assert.deepEqual(detail.skill.licence, { state: 'undeclared' })
 })

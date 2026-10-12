@@ -207,6 +207,14 @@ export interface MarketDetail {
 export interface MarketSearchPayload {
   query: string
   limit: number
+  /** The one-based page this answer carries. */
+  page: number
+  /**
+   * Whether at least one source can serve a page after this one. False does
+   * not mean "the catalogue is exhausted" — a source that cannot page at all
+   * reports false on every page — so the UI words its end state per source.
+   */
+  hasMore: boolean
   /** The source that was searched, present when the request named one. */
   source?: string
   skills: MarketSkill[]
@@ -219,6 +227,8 @@ export interface MarketSearchPayload {
 export interface MarketSourceInfo {
   name: string
   searchable: boolean
+  /** Whether the source can page past its first answer. */
+  pageable: boolean
 }
 
 /** One thrown API error with the host-provided message. */
@@ -298,9 +308,10 @@ export class SkillsHubApi {
    * @param limit - maximum rows.
    * @param source - the source to search, chosen by the user before the
    *   search; omitted searches every source at once.
+   * @param page - one-based page; "load more" asks for page 2, 3, …
    */
-  async marketSearch(query: string, limit = 20, source?: string): Promise<MarketSearchPayload> {
-    const params = new URLSearchParams({ q: query, limit: String(limit) })
+  async marketSearch(query: string, limit = 20, source?: string, page = 1): Promise<MarketSearchPayload> {
+    const params = new URLSearchParams({ q: query, limit: String(limit), page: String(page) })
     if (source !== undefined && source !== '') params.set('source', source)
     return this.request<MarketSearchPayload>(`${API.marketSearch}?${params.toString()}`)
   }

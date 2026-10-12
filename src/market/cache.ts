@@ -82,14 +82,13 @@ export class TtlCache<T> {
 /** One shared cache set for the market layer. */
 export interface MarketCaches {
   /**
-   * skills.sh search results, keyed by query+limit.
+   * One source's paged search answer, keyed by source+query+limit+page.
    *
-   * Typed as a union rather than one cache per row shape because the search
-   * cache is also read by `rowForId` to rebuild a row from an id; both callers
-   * narrow on read, and a single key space keeps a search and its later detail
-   * view sharing one entry.
+   * The whole `SearchPage` is cached rather than just its rows, because "load
+   * more" must not be answered with page one from the cache and `hasMore` is
+   * part of the answer.
    */
-  search: TtlCache<import('./types.ts').MarketSkill[]>
+  search: TtlCache<import('./types.ts').SearchPage>
   /** GitHub repository trees, keyed by owner/repo@ref. */
   tree: TtlCache<readonly import('./sources/github.ts').TreeEntry[]>
   /** Remote file bodies (SKILL.md), keyed by raw URL. */

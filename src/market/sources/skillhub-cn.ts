@@ -227,10 +227,13 @@ async function readDetailParts(
 export const skillhubSource: MarketSource = {
   name: 'skillhub',
   searchable: true,
+  // The registry pages natively (page + pageSize + total), so "load more" is a
+  // real capability here.
+  pageable: true,
 
-  async search(query, limit, ctx) {
+  async search(query, limit, ctx, page = 1) {
     const pageSize = Math.min(Math.max(limit, 1), 50)
-    const payload = await ctx.fetchJson<ListResponse>(listUrl(query, 1, pageSize), {
+    const payload = await ctx.fetchJson<ListResponse>(listUrl(query, page, pageSize), {
       signal: ctx.signal,
       timeoutMs: 20_000,
       maxBytes: LIST_MAX_BYTES,
@@ -251,7 +254,15 @@ export const skillhubSource: MarketSource = {
       const normalised = toMarketSkill(row)
       if (normalised !== undefined) rows.push(normalised)
     }
-    return rows
+    // The registry reports a total for the query, so "is there a next page" is
+    // a fact rather than a guess about the row count.
+    const total = typeof payload.data.total === 'number' ? payload.data.total : undefined
+    const servedUpTo = (page - 1) * pageSize + rows.length
+    return {
+      rows,
+      hasMore: total === undefined ? rows.length >= pageSize : servedUpTo < total,
+      ...(total === undefined ? {} : { total }),
+    }
   },
 
   async detail(skill, ctx) {

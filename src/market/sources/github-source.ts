@@ -76,9 +76,11 @@ export const githubSource: MarketSource = {
   // A repository has no queryable index: it is browsed whole, so the source
   // contributes rows only through listRepo.
   searchable: false,
+  // Nothing to page: a repository's tree arrives in one request.
+  pageable: false,
 
   async search() {
-    return []
+    return { rows: [], hasMore: false }
   },
 
   async detail(skill, ctx) {

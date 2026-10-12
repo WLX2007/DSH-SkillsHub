@@ -116,6 +116,23 @@ export interface MarketDetail {
   totalBytes: number
 }
 
+/** The answer to one page of a source's search. */
+export interface SearchPage {
+  /** The rows of this page, best match first. */
+  rows: MarketSkill[]
+  /**
+   * Whether the source can serve a page after this one.
+   *
+   * Deliberately explicit rather than inferred from "the page was full": a
+   * registry whose total is unknown cannot answer that question from the row
+   * count alone, and a panel that guesses it shows a "load more" control that
+   * can only come back empty.
+   */
+  hasMore: boolean
+  /** The registry's own total for this query, when it reports one. */
+  total?: number
+}
+
 /** What every source receives when it works. */
 export interface MarketSourceContext {
   /** Accelerator chain for raw GitHub content. */
@@ -134,14 +151,18 @@ export interface MarketSource {
   readonly name: string
   /** Whether `search` can answer a query. */
   readonly searchable: boolean
+  /** Whether `search` can page past its first answer. */
+  readonly pageable: boolean
   /**
    * Search for skills.
    * @param query - free text; empty means "whatever this source lists".
-   * @param limit - maximum rows to return.
+   * @param limit - maximum rows to return for this page.
    * @param ctx - proxy chain and fetchers.
-   * @returns normalised rows, best match first.
+   * @param page - one-based page number; defaults to 1. A source that cannot
+   *   page past its first answer ignores this.
+   * @returns this page's rows and whether a later page exists.
    */
-  search(query: string, limit: number, ctx: MarketSourceContext): Promise<MarketSkill[]>
+  search(query: string, limit: number, ctx: MarketSourceContext, page?: number): Promise<SearchPage>
   /**
    * Resolve one skill's files and body.
    * @param skill - the row to read, as returned by search or parse.

@@ -51,6 +51,10 @@ export const zh = {
   'market.licence.declared': '许可证：{licence}',
   'market.licence.undeclared': '未声明许可证',
   'market.licence.field': '许可证',
+  'market.loadingMore': '正在加载更多…',
+  'market.loadMore': '加载更多',
+  'market.exhausted': '已加载全部结果',
+  'market.endOfSource': '该来源没有更多结果',
 
   // --- Skills list ---
   'list.loading': '正在加载…',
@@ -189,6 +193,10 @@ export const en: Record<SkillsHubKey, string> = {
   'market.licence.declared': 'Licence: {licence}',
   'market.licence.undeclared': 'No licence declared',
   'market.licence.field': 'Licence',
+  'market.loadingMore': 'Loading more…',
+  'market.loadMore': 'Load more',
+  'market.exhausted': 'All results loaded',
+  'market.endOfSource': 'No more results from this source',
 
   'list.loading': 'Loading…',
   'list.loadFailed': 'Failed to load: {error}',

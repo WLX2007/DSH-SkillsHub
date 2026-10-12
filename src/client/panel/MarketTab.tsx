@@ -27,7 +27,9 @@ import {
   Modal,
   PathLabel,
   Pill,
+  Switch,
   Tag,
+  TextShimmer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -39,6 +41,9 @@ import {
 } from '../api.ts'
 import { tt } from '../panel-helpers.ts'
 import css from './panel.module.css'
+
+/** Rows per search page. Small enough that "load more" lands fast. */
+const PAGE_SIZE = 20
 
 /**
  * Build the markdown chrome copy for one render.
@@ -69,12 +74,27 @@ type SearchState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
 
+/**
+ * The page state a search has reached.
+ *
+ * `page` is the last page answered, `hasMore` the host's own word on whether a
+ * later one exists, and `exhausted` distinguishes "this source pages and there
+ * is no more" from "this source never paged at all" — the two read differently
+ * at the end of the list.
+ */
+interface Paged {
+  page: number
+  hasMore: boolean
+  exhausted: boolean
+}
+
 /** The market tab body. */
 export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [submitted, setSubmitted] = useState('')
   const [state, setState] = useState<SearchState>({ kind: 'idle' })
   const [results, setResults] = useState<MarketSkill[] | undefined>(undefined)
+  const [paged, setPaged] = useState<Paged | undefined>(undefined)
   const [failures, setFailures] = useState<Array<{ source: string; message: string }>>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [sources, setSources] = useState<MarketSourceInfo[] | undefined>(undefined)
@@ -97,19 +117,38 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
     return () => { cancelled = true }
   }, [api])
 
-  const runSearch = async (text: string, limit = 20, source: string): Promise<void> => {
+  /**
+   * Search one page.
+   * @param mode - `replace` starts the query over; `append` is "load more".
+   */
+  const runSearch = async (text: string, mode: 'replace' | 'append', source: string, page: number): Promise<void> => {
     const seq = ++searchSeq.current
     setState({ kind: 'loading' })
     try {
-      const payload = await api.marketSearch(text, limit, source === 'all' ? undefined : source)
+      const payload = await api.marketSearch(text, PAGE_SIZE, source === 'all' ? undefined : source, page)
       if (seq !== searchSeq.current) return
-      setResults(payload.skills)
+      // A named source cannot page, so it reports hasMore false on page one
+      // already; a source that cannot page never becomes "exhausted" either,
+      // because it never promised a second page. Only a paging source that has
+      // served its last page reads as exhausted.
+      const pagedSource = sources?.find(entry => entry.name === (source === 'all' ? undefined : source))
+      const pages = pagedSource?.pageable ?? source === 'all'
+      setResults(previous => (mode === 'append' && previous !== undefined
+        ? [...previous, ...payload.skills]
+        : payload.skills))
+      setPaged({ page: payload.page, hasMore: payload.hasMore, exhausted: pages && !payload.hasMore })
       setCounts(payload.counts)
       setFailures(payload.failures)
       setState({ kind: 'idle' })
     } catch (err) {
       if (seq !== searchSeq.current) return
+      if (mode === 'append') {
+        // "Load more" failing must not blank the rows already on screen.
+        setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
+        return
+      }
       setResults(undefined)
+      setPaged(undefined)
       setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
     }
   }
@@ -119,10 +158,16 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
     setSubmitted(text)
     if (text === '') {
       setResults(undefined)
+      setPaged(undefined)
       setState({ kind: 'idle' })
       return
     }
-    void runSearch(text, 20, selectedSource)
+    void runSearch(text, 'replace', selectedSource, 1)
+  }
+
+  const loadMore = (): void => {
+    if (paged === undefined || !paged.hasMore || state.kind === 'loading') return
+    void runSearch(submitted, 'append', selectedSource, paged.page + 1)
   }
 
   const searchable = sources?.some(source => source.searchable) ?? true
@@ -176,6 +221,29 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
               ))}
             </ul>
           )
+      )}
+
+      {/* The tail of the list: one of three states, never silent. While a page
+          is loading the previous rows stay visible, so "load more" reads as an
+          addition rather than a reload. */}
+      {results !== undefined && submitted !== '' && results.length > 0 && (
+        state.kind === 'loading' ? (
+          <p className={css.marketTail} data-dsh-part="market-loading">
+            <TextShimmer active className={css.marketTailText}>{tt('market.loadingMore')}</TextShimmer>
+          </p>
+        ) : paged !== undefined && paged.hasMore ? (
+          <div className={css.marketTail} data-dsh-part="market-more">
+            <Button size="md" variant="outline" onClick={loadMore}>
+              {tt('market.loadMore')}
+            </Button>
+          </div>
+        ) : (
+          <p className={css.marketTail} data-dsh-part="market-end">
+            <span className={css.marketTailText}>
+              {paged?.exhausted === true ? tt('market.exhausted') : tt('market.endOfSource')}
+            </span>
+          </p>
+        )
       )}
 
       {state.kind === 'idle' && results === undefined && searchable && submitted === '' && (

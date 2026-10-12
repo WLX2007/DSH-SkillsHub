@@ -663,10 +663,15 @@ export function makeRoutes(ctx: Context, deps: SkillsHubRouteDeps): WebRoute[] {
           // every source; a name the host does not register is rejected by the
           // market layer rather than silently widened to "all".
           const source = queryParam(url, 'source')
-          const outcome = await market.search(query, limit, reqSignal(req), source)
+          // "Load more" asks for page 2, 3, …; page one is the initial search.
+          const pageRaw = Number(queryParam(url, 'page'))
+          const page = Number.isFinite(pageRaw) ? Math.min(Math.max(Math.trunc(pageRaw), 1), 100) : 1
+          const outcome = await market.search(query, limit, reqSignal(req), source, page)
           writeJson(res, 200, {
             query,
             limit,
+            page,
+            hasMore: outcome.hasMore,
             ...(source === undefined ? {} : { source }),
             skills: outcome.skills,
             counts: outcome.counts,
