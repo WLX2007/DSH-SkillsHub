@@ -310,6 +310,27 @@ try {
     assert.match(result.body.moved, /\.trash/)
   })
 
+  await check('delete of a directory-backed market skill removes the whole directory', async () => {
+    // A market install is a directory (SKILL.md + resources + provenance);
+    // deleting it must move that unit, not leave the resources behind.
+    const skillDir = join(dshHome, 'skills', 'market-skill')
+    mkdirSync(join(skillDir, 'references'), { recursive: true })
+    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: market-skill\ndescription: d\n---\nbody', 'utf8')
+    writeFileSync(join(skillDir, 'references', 'guide.md'), 'guide', 'utf8')
+    writeFileSync(join(skillDir, '.skills-hub.json'), '{"id":"x"}', 'utf8')
+    const result = await callRoute(routes, host.ROUTES.delete, {
+      method: 'POST',
+      body: { name: 'market-skill', path: join(skillDir, 'SKILL.md') },
+    })
+    assert.equal(result.status, 200)
+    assert.equal(existsSync(skillDir), false, 'the whole skill directory must be gone')
+    assert.ok(existsSync(result.body.moved), 'the moved unit must exist in .trash')
+    assert.match(result.body.moved, /\.trash[/\\]\d+-market-skill$/)
+    // The trashed unit keeps its contents for recovery.
+    assert.ok(existsSync(join(result.body.moved, 'SKILL.md')), 'SKILL.md must be inside the trashed unit')
+    assert.ok(existsSync(join(result.body.moved, '.skills-hub.json')), 'provenance must travel with the skill')
+  })
+
   await check('delete of a stale path is refused with 409', async () => {
     const result = await callRoute(routes, host.ROUTES.delete, {
       method: 'POST',

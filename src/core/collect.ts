@@ -626,15 +626,29 @@ export async function overwriteSkillFile(path: string, name: string, description
 }
 
 /**
- * Move a skill file into its .trash sibling directory (recoverable delete).
- * @param path - the resolved absolute SKILL.md path.
- * @returns the trash location the file was moved to.
+ * Move a skill into its root's .trash directory (recoverable delete).
+ *
+ * A skill may be a single file or a whole directory (a market install carries
+ * SKILL.md, resource subdirectories and the provenance record), so the unit of
+ * deletion is whatever exists at the path's parent: the parent DIRECTORY when
+ * the file is its SKILL.md, the file alone when the skill is a loose .md.
+ *
+ * Only ever moves things INTO .trash — nothing is unlinked outside it — and
+ * the deleted unit stays recoverable there.
+ *
+ * @param path - the resolved absolute SKILL.md path (or loose skill file).
+ * @returns the trash location the skill was moved to.
  */
 export async function trashSkillFile(path: string): Promise<string> {
-  const trashDir = join(dirname(path), '.trash')
+  const file = resolve(path)
+  const parent = dirname(file)
+  // The deletable unit: the skill directory when the file sits directly in it
+  // (the market-install and create-route layout), otherwise the file itself.
+  const unit = basename(file) === 'SKILL.md' ? parent : file
+  const trashDir = join(dirname(unit), '.trash')
   await mkdir(trashDir, { recursive: true })
-  const trashTarget = join(trashDir, `${Date.now()}-SKILL.md`)
-  await rename(path, trashTarget)
+  const trashTarget = join(trashDir, `${Date.now()}-${basename(unit)}`)
+  await rename(unit, trashTarget)
   return trashTarget
 }
 
