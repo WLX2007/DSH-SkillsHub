@@ -133,6 +133,14 @@ nightly 通道下 tag 与已装版本可能不同，要核验再照抄。
     磁盘不留半个技能；限额：单文件 2 MB / 总量 16 MB / 200 文件；
   - **同名即 409**，绝不静默覆盖（更新是 M4 的事）；
   - provenance（`.skills-hub.json`）写在技能目录内，M4 的更新检查从它读回；
+  - **安装后必须 `announceMutation(result.path)`**：官方 `skill-filesystem`
+    provider 的目录失效有两条链——chokidar 监听技能根（对任何进程的写入都生效，
+    但 `~/.agents/skills` 不存在时降级为轮询的 ancestor 模式，有竞态窗口）和
+    `fs/observed` 事件（只在模型的 `write`/`edit` 工具触发，`mutationToolName`
+    白名单只认这两个名字）。插件安装不在工具调用里，必须自己
+    `ctx.emit('fs/observed', target, {kind:'present'}, {name:'write'})`——桥接
+    实现在 `src/index.ts` 的 `announceMutation`（先过 `ctx.fs.resolve` 拿
+    target 再 emit）；两个服务缺任何一个都降级为 no-op，watcher 兜底。
   - 安装按钮必须经过确认弹窗（官方 Modal）才发起请求——`tests/ui-structure.mjs`
     锁定这一点，负向控制已验证。
 - **tsdown 多入口**：market 模块从 `lib/market.js`（伴生入口）导出，因为从 index.ts

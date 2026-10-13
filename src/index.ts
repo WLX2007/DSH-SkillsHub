@@ -80,6 +80,24 @@ interface HostServiceContext {
   }
   /** In-memory session store: live sessions in creation order. */
   sessions?: { list(): Array<{ header?: { cwd?: string } }> }
+  /**
+   * The filesystem seam (`ctx.fs`, sandboxed). The skill-filesystem provider
+   * listens for `fs/observed` mutations from the model's write/edit tools and
+   * invalidates its catalog — but a plugin writing outside a tool call never
+   * emits that event. The install route therefore emits it directly (below),
+   * which is the same channel the official tools use, carrying an actor whose
+   * name the provider's own mutation gate (`edit`/`write`) accepts.
+   */
+  fs?: {
+    resolve(path: string, opts?: { cwd?: string }): Promise<{ targetKey: string; displayPath: string }>
+  }
+  /**
+   * First-party event emitter. `ctx.emit("fs/observed", target, observation,
+   * actor)` is how the official write tools announce a mutation; the
+   * skill-filesystem provider subscribes and invalidates its skill catalog
+   * when the actor is one of its recognized mutation tools.
+   */
+  emit?(event: string, ...args: unknown[]): void
 }
 
 /**
@@ -128,6 +146,26 @@ function applyImpl(ctx: Context, config?: Config): void {
       : undefined,
     activeSessionCwds,
     logger: { warn: (error: unknown) => ctx.logger.warn(error) },
+    /**
+     * Announce a first-party skill mutation the same way the model's write
+     * tools do: resolve the path through the sandboxed fs seam, then emit
+     * `fs/observed` with an actor named `write` — the exact name the
+     * skill-filesystem provider's mutation gate accepts. The provider
+     * invalidates its catalog and notifies every session, so an installed
+     * skill is invocable in the very next turn without a restart. Degrades to
+     * a no-op when either service is absent: the chokidar watcher on the skill
+     * roots remains the fallback (it watches the filesystem itself, not the
+     * tools), so the bridge is an accelerator, not a correctness dependency.
+     */
+    announceMutation: async (path: string): Promise<void> => {
+      try {
+        const target = await services.fs?.resolve(path)
+        if (target === undefined) return
+        services.emit?.('fs/observed', target, { kind: 'present', version: `${Date.now()}` }, { name: 'write' })
+      } catch (error) {
+        ctx.logger.warn(error)
+      }
+    },
   }
 
   const routes = makeRoutes(ctx, deps)

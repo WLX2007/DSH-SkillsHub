@@ -157,6 +157,14 @@ export interface SkillsHubRouteDeps {
   githubProxies?: readonly string[]
   /** Logger. */
   logger: { warn(error: unknown): void }
+  /**
+   * Announce a first-party mutation of an installed skill's directory, so the
+   * skill-filesystem provider invalidates its catalog without waiting for its
+   * own watcher. Resolves the path through the host's fs seam and emits the
+   * same `fs/observed` event the model's write tools emit. Absent means the
+   * services are unavailable and the watcher remains the only mechanism.
+   */
+  announceMutation?(path: string): Promise<void>
 }
 
 /** Default process cwd fallback (overridable in tests). */
@@ -773,6 +781,11 @@ export function makeRoutes(ctx: Context, deps: SkillsHubRouteDeps): WebRoute[] {
           // showing, exactly as the create route does — never from a
           // client-supplied directory.
           const result = await installSkill(market, id, root, findProjectRoot(cwd), dshHome, PLUGIN_VERSION, reqSignal(req))
+          // Announce the mutation on the official channel so the provider's
+          // catalog invalidates immediately — the installed skill is
+          // invocable in the next turn, no restart. Best-effort: the watcher
+          // on the skill roots is the fallback.
+          await deps.announceMutation?.(result.path)
           writeJson(res, 200, { ok: true, ...result }, { 'cache-control': 'no-store' })
         } catch (error) {
           if (error instanceof Error && /already exists|not a valid skill name|unsafe path|over the|not offered by any market source|exceeds/.test(error.message)) {
