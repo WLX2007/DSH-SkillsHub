@@ -27,3 +27,7 @@ reference/
 
 # ACL 诊断与恢复记录（本地工具产物）
 .acl-recovery/
+
+# Project skill roots are user data, not repository content (skills installed
+# during project-scope install testing landed here).
+.dsh/
