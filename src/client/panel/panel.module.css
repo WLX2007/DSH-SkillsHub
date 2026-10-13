@@ -25,8 +25,13 @@
 
 /* --- page frame ---------------------------------------------------------- */
 
-/* The page is its own scroll surface, exactly like the Plugin manager page:
-   header, tabs and content all live in one centred column. */
+/* The page is a flex column pinned to the viewport height, exactly like the
+   Plugin manager page: header, tabs and content in one centred column.
+   The page itself does NOT scroll — .content does, below — because a
+   height:100% child of the shell's flex column gets stretched by its content
+   (min-height:auto), overflows a clipped ancestor, and then nothing can
+   scroll at all. Keeping the scroll surface here, where the height is
+   definite, is what makes every tab reliably scrollable. */
 .page {
   display: flex;
   flex-direction: column;
@@ -34,7 +39,7 @@
   gap: 32px;
   box-sizing: border-box;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
   padding: 0 clamp(24px, 4vw, 48px) 48px;
   color: var(--dsw-alias-label-primary);
 }
@@ -92,10 +97,20 @@
   flex: 1;
 }
 
+/* The scroll surface: everything below the tab row. flex:1 + min-height:0 is
+   what lets it shrink to the space the header leaves and own the overflow;
+   without min-height:0 a flex child refuses to shrink below its content and
+   pushes the page taller than the viewport instead of scrolling. */
 .content {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 24px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the focus ring of the last card not to clip. */
+  padding-bottom: 8px;
 }
 
 /* The tab content's own toolbar (search + filters), right under the tabs. The

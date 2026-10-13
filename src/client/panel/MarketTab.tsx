@@ -170,6 +170,31 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
     void runSearch(submitted, 'append', selectedSource, paged.page + 1)
   }
 
+  /** Infinite scroll: when the list's tail sentinel enters the viewport, load
+   * the next page. The observer re-arms through the tail's identity change —
+   * it re-subscribes whenever the sentinel mounts, unmounts, or the guards it
+   * reads change — and a page fetch swaps the sentinel for the loading tail,
+   * which re-arms the next page the same way, so a tall window that fits two
+   * pages keeps going.
+   */
+  const tailRef = useRef<HTMLParagraphElement | HTMLDivElement | null>(null)
+  useEffect(() => {
+    const sentinel = tailRef.current
+    // The tail only renders the sentinel while a further page exists and no
+    // fetch is in flight, so reaching here is itself the guard check.
+    if (sentinel === null || paged === undefined || !paged.hasMore) return
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          loadMore()
+          break
+        }
+      }
+    }, { root: null, rootMargin: '240px 0px', threshold: 0 })
+    observer.observe(sentinel)
+    return () => { observer.disconnect() }
+  })
+
   const searchable = sources?.some(source => source.searchable) ?? true
 
   return (
@@ -223,16 +248,17 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
           )
       )}
 
-      {/* The tail of the list: one of three states, never silent. While a page
-          is loading the previous rows stay visible, so "load more" reads as an
-          addition rather than a reload. */}
+      {/* The tail of the list: one of three states, never silent. The sentinel
+          sits inside the loading/available tails, so reaching the bottom of
+          the scroll area loads the next page without a click; the button is
+          the same action's keyboard/click target, not a second mechanism. */}
       {results !== undefined && submitted !== '' && results.length > 0 && (
         state.kind === 'loading' ? (
-          <p className={css.marketTail} data-dsh-part="market-loading">
+          <p className={css.marketTail} data-dsh-part="market-loading" ref={tailRef}>
             <TextShimmer active className={css.marketTailText}>{tt('market.loadingMore')}</TextShimmer>
           </p>
         ) : paged !== undefined && paged.hasMore ? (
-          <div className={css.marketTail} data-dsh-part="market-more">
+          <div className={css.marketTail} data-dsh-part="market-more" ref={tailRef}>
             <Button size="md" variant="outline" onClick={loadMore}>
               {tt('market.loadMore')}
             </Button>
