@@ -189,14 +189,15 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The install row inside the detail dialog: root choice beside the action. */
+/* The install row inside the detail dialog's footer: root choice beside the
+   action, always visible — the scrolling body never buries the primary
+   action of the dialog. It stacks under the provider tag inside .previewMeta,
+   which becomes a column when it carries an install row. */
 .installRow {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  margin-top: 8px;
   flex-wrap: wrap;
 }
 
@@ -612,8 +613,17 @@
   width: 100%;
 }
 
-/* Where the previewed text came from: the file, or the skill registry. */
+/* Where the previewed text came from — and, for a market skill, where the
+   install controls ride. Column so the install row stacks under the tags. */
 .previewMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.previewMeta > .previewMetaLine {
   display: flex;
   align-items: center;
   gap: 8px;

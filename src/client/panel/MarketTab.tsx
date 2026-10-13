@@ -460,14 +460,48 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
       contentClassName={css.previewContent}
       footer={(
         <div className={css.previewFoot}>
-          {skill !== undefined && (
-            <div className={css.previewMeta}>
-              <Tag tone="outline">{skill.provider}</Tag>
-              <PathLabel path={skill.origin.kind === 'skillhub'
-                ? `skillhub.cn/${skill.origin.slug}`
-                : `${skill.origin.owner}/${skill.origin.repo}`} />
-            </div>
-          )}
+          <div className={css.previewMeta}>
+            {skill !== undefined && (
+              <div className={css.previewMetaLine}>
+                <Tag tone="outline">{skill.provider}</Tag>
+                <PathLabel path={skill.origin.kind === 'skillhub'
+                  ? `skillhub.cn/${skill.origin.slug}`
+                  : `${skill.origin.owner}/${skill.origin.repo}`} />
+              </div>
+            )}
+            {/* Install lives in the footer, not the scrolling body: a long
+                skill's instructions can push the in-body control several
+                screens down, and the primary action of a dialog belongs where
+                every dialog keeps it — always visible, next to Close. */}
+            {skill !== undefined && detail !== undefined && (
+              <div className={css.installRow} data-dsh-part="market-install">
+                {installedPath !== undefined ? (
+                  <p className={css.feedback} data-kind="ok">{tt('market.installedAt', { path: installedPath })}</p>
+                ) : (
+                  <>
+                    <SegmentedControl
+                      id="skills-hub-install-root"
+                      value={installRoot}
+                      options={[
+                        { value: 'user', label: tt('create.root.user') },
+                        { value: 'project', label: tt('create.root.project') },
+                      ]}
+                      onChange={setInstallRoot}
+                      label={tt('market.installRoot')}
+                    />
+                    <Button
+                      variant="primary"
+                      size="md"
+                      disabled={installing}
+                      onClick={() => { setConfirming(true) }}
+                    >
+                      {installing ? tt('market.installing') : tt('market.install')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           <div className={css.formActions}>
             {error !== undefined && (
               <Button size="sm" variant="outline" icon={<IconRefreshOutlineRegular size={16} />} onClick={() => { void load() }}>
@@ -526,38 +560,6 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
                 <span className={css.marketMore}>{tt('market.moreFiles', { count: String(detail.files.length - 12) })}</span>
               )}
             </p>
-          )}
-
-          {/* Install: root choice, then the action. An installed skill needs no
-              second click — the success line carries the path it landed at. */}
-          <div className={css.installRow} data-dsh-part="market-install">
-            {installedPath !== undefined ? (
-              <p className={css.feedback} data-kind="ok">{tt('market.installedAt', { path: installedPath })}</p>
-            ) : (
-              <>
-                <SegmentedControl
-                  id="skills-hub-install-root"
-                  value={installRoot}
-                  options={[
-                    { value: 'user', label: tt('create.root.user') },
-                    { value: 'project', label: tt('create.root.project') },
-                  ]}
-                  onChange={setInstallRoot}
-                  label={tt('market.installRoot')}
-                />
-                <Button
-                  variant="primary"
-                  size="md"
-                  disabled={installing}
-                  onClick={() => { setConfirming(true) }}
-                >
-                  {installing ? tt('market.installing') : tt('market.install')}
-                </Button>
-              </>
-            )}
-          </div>
-          {installError !== undefined && (
-            <p className={css.feedback} data-kind="error">{tt('market.installFailed', { error: installError })}</p>
           )}
         </div>
       )}
