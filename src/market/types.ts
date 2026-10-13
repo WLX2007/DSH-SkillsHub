@@ -89,6 +89,17 @@ export interface MarketSkill {
    * make the panel assert a permission nobody granted.
    */
   licence?: MarketLicence
+  /**
+   * The skill's icon, as a data URL the host itself produced.
+   *
+   * The registry supplies a third-party URL; the host fetches it under its own
+   * URL policy (https, allow-listed hosts, size cap) and re-serves the bytes
+   * as a `data:` URL, so the browser never loads an image from an origin the
+   * panel did not vet — no referrer leak, no mixed content, no tracking pixel
+   * on every panel render. Absent when the source offers none or the fetch
+   * failed: a missing icon degrades to the glyph, never to an error.
+   */
+  icon?: string
 }
 
 /** One file inside a skill directory. */

@@ -314,14 +314,34 @@ function LicenceTag({ licence }: { licence: MarketLicence }): React.JSX.Element 
     : <Tag tone="warning">{tt('market.licence.undeclared')}</Tag>
 }
 
+/**
+ * The icon box of a result row.
+ *
+ * A row whose source supplies an icon shows it; one that does not — or whose
+ * icon failed the host's URL policy — keeps the glyph every local skill row
+ * uses. The image is a host-produced data URL, so there is no third-party
+ * request, no referrer, and nothing to lazy-load wrong; `loading="lazy"` is
+ * still set because it costs nothing on the off-screen rows.
+ *
+ * @param icon - the host-produced data URL, when the row has one.
+ * @returns the icon box contents.
+ */
+function RowIcon({ icon }: { icon: string | undefined }): React.JSX.Element {
+  return (
+    <span className={css.cardIcon} aria-hidden="true">
+      {icon === undefined
+        ? <IconSkillOutlineRegular size={20} />
+        : <img className={css.cardIconImage} src={icon} alt="" loading="lazy" />}
+    </span>
+  )
+}
+
 /** One result row: the shipped card anatomy, opening the detail on its name. */
 function MarketRow({ skill, onOpen }: { skill: MarketSkill; onOpen: () => void }): React.JSX.Element {
   return (
     <li className={css.card} data-dsh-part="market-row" data-skill={skill.name}>
       <div className={css.cardHead}>
-        <span className={css.cardIcon} aria-hidden="true">
-          <IconSkillOutlineRegular size={20} />
-        </span>
+        <RowIcon icon={skill.icon} />
         <div className={css.cardMain}>
           <div className={css.titleRow}>
             <button

@@ -72,6 +72,7 @@ interface ListRow {
   score?: unknown
   verified?: unknown
   source?: unknown
+  iconUrl?: unknown
 }
 
 /** The listing envelope. */
@@ -147,6 +148,80 @@ export function licenceOf(frontmatterText: string): MarketLicence {
 }
 
 /**
+ * The icon hosts this panel will fetch from.
+ *
+ * The registry serves icons from Tencent's CDN today; the allow-list is an
+ * explicit contract, not a guess — a registry that starts pointing icons at an
+ * arbitrary host will not silently turn the panel into that host's fetcher.
+ * New hosts are added here deliberately, with the URL policy in `iconDataUrl`
+ * (https only, hard size cap, image content-type) as the second gate.
+ */
+const ICON_HOSTS = new Set([
+  'cloudcache.tencent-cloud.com',
+])
+
+/** The largest icon the panel will inline: a 48px box needs a fraction of it. */
+const ICON_MAX_BYTES = 256 * 1024
+
+/** Image content types acceptable in a data URL. */
+const ICON_CONTENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'])
+
+/** Icon data-URL cache: icons repeat across searches (the same skill ranked
+ * again, pages re-fetched), and each miss is a real network round trip. */
+const iconCache = new Map<string, string>()
+const ICON_CACHE_MAX = 512
+
+/**
+ * Normalise a registry-reported icon URL and fetch it as a data URL.
+ *
+ * Everything about the URL is treated as hostile input: it must parse as
+ * https, its host must be allow-listed, and the body must be a bounded image.
+ * Any failure resolves to undefined — an icon is decoration, and a failed one
+ * must degrade to the glyph rather than break the row.
+ *
+ * @param value - the raw `iconUrl` field.
+ * @param ctx - fetchers.
+ * @returns a `data:` URL, or undefined.
+ */
+async function iconDataUrl(value: unknown, ctx: MarketSourceContext): Promise<string | undefined> {
+  if (typeof value !== 'string' || value === '') return undefined
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return undefined
+  }
+  if (url.protocol !== 'https:' || !ICON_HOSTS.has(url.hostname)) return undefined
+
+  const cached = iconCache.get(url.href)
+  if (cached !== undefined) return cached
+
+  try {
+    const response = await fetch(url, {
+      signal: ctx.signal,
+      redirect: 'follow',
+      headers: { accept: 'image/*' },
+    })
+    if (!response.ok) return undefined
+    const type = response.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
+    if (!ICON_CONTENT_TYPES.has(type)) return undefined
+    const length = Number(response.headers.get('content-length') ?? '')
+    if (Number.isFinite(length) && length > ICON_MAX_BYTES) return undefined
+    const buffer = await response.arrayBuffer()
+    if (buffer.byteLength > ICON_MAX_BYTES) return undefined
+    const dataUrl = `data:${type};base64,${Buffer.from(buffer).toString('base64')}`
+    if (iconCache.size >= ICON_CACHE_MAX) {
+      // Bounded: drop the oldest entry (Map preserves insertion order).
+      iconCache.delete(iconCache.keys().next().value as string)
+    }
+    iconCache.set(url.href, dataUrl)
+    return dataUrl
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Normalise one listing row.
  * @param row - raw registry row.
  * @returns a normalised row, or undefined when the entry is malformed.
@@ -161,6 +236,11 @@ function toMarketSkill(row: ListRow): MarketSkill | undefined {
     (typeof row.description_zh === 'string' && row.description_zh.trim() !== '' ? row.description_zh : undefined)
     ?? (typeof row.description === 'string' ? row.description : '')
   const downloads = typeof row.downloads === 'number' && Number.isFinite(row.downloads) ? row.downloads : undefined
+  // The raw URL is kept apart from the normalised row on purpose: the row the
+  // client sees carries only the host-produced data URL, never the third-party
+  // address it came from (the id contract — the client gets coordinates, not
+  // URLs — extends to icons).
+  const iconUrl = typeof row.iconUrl === 'string' && row.iconUrl !== '' ? row.iconUrl : undefined
 
   return {
     id: encodeSkillId('skillhub', { kind: 'skillhub', slug }),
@@ -170,6 +250,7 @@ function toMarketSkill(row: ListRow): MarketSkill | undefined {
     sourceLabel: 'skillhub.cn',
     origin: { kind: 'skillhub', slug },
     ...(downloads === undefined ? {} : { installs: downloads }),
+    ...({ ...(iconUrl === undefined ? {} : { iconUrl }) } as { iconUrl?: string }),
   }
 }
 
@@ -248,12 +329,25 @@ export const skillhubSource: MarketSource = {
       throw new MarketFetchError('parse', 'skillhub.cn listing answer had no skills array')
     }
 
-    const rows: MarketSkill[] = []
+    const rawRows: Array<{ row: MarketSkill; iconUrl?: string }> = []
     for (const row of payload.data.skills as ListRow[]) {
-      if (rows.length >= limit) break
+      if (rawRows.length >= limit) break
       const normalised = toMarketSkill(row)
-      if (normalised !== undefined) rows.push(normalised)
+      if (normalised === undefined) continue
+      // The raw URL is peeled off here; the row the client sees carries only
+      // the host-produced data URL, never the third-party address (the id
+      // contract — coordinates, not URLs — extends to icons).
+      const { iconUrl, ...rest } = normalised as MarketSkill & { iconUrl?: string }
+      rawRows.push({ row: rest, ...(iconUrl === undefined ? {} : { iconUrl }) })
     }
+    // Icons fetch concurrently: a page of rows must not serialise into one
+    // request chain. A failure drops that row's icon only — the row degrades
+    // to the glyph, never to an error.
+    const rows: MarketSkill[] = await Promise.all(rawRows.map(async ({ row, iconUrl }) => {
+      if (iconUrl === undefined) return row
+      const icon = await iconDataUrl(iconUrl, ctx)
+      return icon === undefined ? row : { ...row, icon }
+    }))
     // The registry reports a total for the query, so "is there a next page" is
     // a fact rather than a guess about the row count.
     const total = typeof payload.data.total === 'number' ? payload.data.total : undefined

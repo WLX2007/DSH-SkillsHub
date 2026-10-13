@@ -180,6 +180,12 @@ export interface MarketSkill {
    * is shown as such: it is the fact a user needs before copying a skill.
    */
   licence?: MarketLicence
+  /**
+   * The skill's icon as a `data:` URL the host produced (fetched under its own
+   * URL policy, so the browser never loads a third-party origin). Absent means
+   * the row falls back to the glyph.
+   */
+  icon?: string
 }
 
 /** One file inside a market skill. */

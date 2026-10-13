@@ -298,6 +298,16 @@
   border: 0.5px solid var(--dsw-alias-border-l3);
   border-radius: var(--dsw-radius-lg);
   color: var(--dsw-alias-label-secondary);
+  /* A registry icon fills the frame without spilling past its radius. */
+  overflow: hidden;
+}
+
+/* A market row's fetched icon: object-fit keeps non-square art from
+   distorting inside the square frame the local rows use for their glyph. */
+.cardIconImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .cardMain {

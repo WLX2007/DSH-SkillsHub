@@ -730,7 +730,7 @@ export function makeRoutes(ctx: Context, deps: SkillsHubRouteDeps): WebRoute[] {
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'GET')) return
         writeJson(res, 200, {
-          sources: market.listSources().map(source => ({ name: source.name, searchable: source.searchable })),
+          sources: market.listSources().map(source => ({ name: source.name, searchable: source.searchable, pageable: source.pageable })),
         }, { 'cache-control': 'no-store' })
       },
     },
