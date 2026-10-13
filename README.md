@@ -1,191 +1,139 @@
 # @wulongxi/dsh-skills-hub
 
-DeepSeek Harness (DSH) **Skills Hub** — a native web GUI panel for browsing and
-searching **online** skill registries, installing skills into user/project
-roots, and managing or creating local skills.
+**Skills Hub** is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) plugin that adds a native, first-class panel to the web GUI for discovering, installing, and managing Agent Skills.
 
-> Status: **M1 (local management)**. The sidebar entry, the native center-column
-> panel, the host route family, the trust fence and the build pipeline are
-> complete and verified. Local skills can be browsed, enabled/disabled, created,
-> edited and deleted. The market search and install engine land in M2-M4 (see the
-> development plan in `docs/`).
+It ships three capabilities in one panel:
 
-## What it does
+- **Market** — search online skill registries (default: [skillhub.cn](https://skillhub.cn), plus skills.sh and any public GitHub repository), preview a skill's full documentation, and read its file manifest before deciding to install.
+- **My Skills** — browse every skill the runtime has loaded, grouped by source; enable or disable skills, edit their `SKILL.md`, or remove them (deletes go to `.trash`, never straight to disk loss).
+- **Create** — write a new skill into the user-level or project-level skill root, with frontmatter handling handled for you.
 
-| Tab | Purpose | Status |
-| --- | --- | --- |
-| Market | Search online skill registries, preview `SKILL.md`, install into the user or project root | Search and detail **done**; install M3 |
-| My Skills | Browse loaded skills by source, enable/disable, edit, delete | **done** |
-| Create | Write a new skill into the user or project root | **done** |
+The panel reads the official skill roots (`<project>/.dsh/skills`, `<project>/.agents/skills`, `~/.dsh/skills`, `~/.agents/skills`, plus any configured `customSkillDirs`) and merges the host's skill registry on top, so what the panel displays is exactly what the model receives.
 
-The panel reads the official skill roots
-(`<project>/.dsh/skills`, `<project>/.agents/skills`, `~/.dsh/skills`,
-`~/.agents/skills`, plus configured `customSkillDirs`) and merges the host's
-skill registry on top, so what the panel shows is what the model receives.
+| | |
+|---|---|
+| Status | Market search & preview: **available**. Skill installation: planned (see [Roadmap](#roadmap)). |
+| Requires | DSH `>= 0.2.0-rc.2` |
+| License | [BSD-3-Clause](LICENSE) |
+| Languages | English, 简体中文 (follows the GUI language setting) |
 
-## Skill market
+---
 
-The Market tab searches online skill registries. Three sources, with
-**skillhub.cn as the default**:
+## Installation
 
-- **skillhub.cn** — a China-hosted skill store with 190,000+ skills, reachable
-  directly with no accelerator. The site actively invites agent integration: it
-  publishes `install/skillhub.md` for agents to read, allows every crawler in
-  robots.txt, and its whole read path is unauthenticated. Rows carry Chinese
-  descriptions, download counts and a relevance score.
-- **skills.sh** — the Agent Skills registry's search endpoint (unauthenticated,
-  not rate limited as far as observed).
-- **GitHub repositories** — type `owner/repo` (a full URL or a `.git` suffix
-  also work) and the panel enumerates every skill directory inside it.
+### From a local checkout (link install)
 
-Results use the same card anatomy as the local skills list; selecting a skill's
-name opens a detail dialog rendered by the shell's own markdown renderer, with
-the skill's file list beside the body. **Every result states its licence** —
-declared ones show the licence (MIT, GPL-3.0, …), undeclared ones show "No
-licence declared": over half of a sampled catalogue declares none, and that is
-a fact a user needs before deciding to install. A source that is down degrades
-the page rather than blanking it: the remaining results still show, and the
-failed source is noted once above them.
+```sh
+dsh plugin --profile <profile> add link:<path-to-this-repo>
+```
 
-**Network policy** (each item a measured constraint — see M2 in the
-development plan):
+Restart the DSH service. The sidebar then shows a **Skills Hub** entry; selecting it opens the panel in the center column.
 
-- The unauthenticated GitHub API allows **60 requests/hour**, so only
-  *discovery* (directory listing) touches it, cached for 30 minutes; file
-  bodies come from raw.githubusercontent.com, which does not count against
-  that budget. skillhub.cn does not touch GitHub at all.
-- GitHub skill bodies are fetched through an accelerator chain (direct first,
-  then mirrors in order); the list is overridable in the plugin config.
-  skillhub.cn is reached directly.
-- The browser only ever sends back the **opaque skill id** the host issued;
-  URLs, repositories and paths are re-derived host-side. The id grammar is
-  validated segment by segment, so a path traversal is rejected before it can
-  reach any fetch.
+### From npm (once published)
 
-## Routes
+```sh
+dsh plugin --profile <profile> add @wulongxi/dsh-skills-hub
+```
 
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `api/skills-hub/list` | GET | Local skills grouped by source |
-| `api/skills-hub/read` | GET | One skill's editable fields and body |
-| `api/skills-hub/preview` | GET | Skill preview (file first, registry fallback) |
-| `api/skills-hub/market/search` | GET | Market search (multi-source, merged and de-duplicated) |
-| `api/skills-hub/market/detail` | GET | One market skill's readable detail |
-| `api/skills-hub/market/list-repo` | GET | Enumerate the skills inside one repository |
-| `api/skills-hub/market/sources` | GET | The market's source list |
-| `api/skills-hub/set-enabled` | POST | Enable/disable (rewrites `disable-model-invocation`) |
-| `api/skills-hub/set-provider-enabled` | POST | Enable/disable a plugin-provided skill in the panel's own store |
-| `api/skills-hub/create` | POST | Create a skill under the user or project root |
-| `api/skills-hub/update` | POST | Rewrite an existing skill in place |
-| `api/skills-hub/delete` | POST | Move a skill into `.trash` |
-| `api/skills-hub/health` | GET | Liveness and capability probe |
+## Usage
 
-## Skill preview
+### Market tab
 
-Selecting a skill's name (or its Preview action) opens a preview dialog. The body
-is rendered by the shell's own markdown renderer (the official `MarkdownText`),
-so a skill reads here exactly as it does in a conversation — same typography,
-same code fences with their copy toolbar. Raw HTML stays disabled and link
-protocols are allowlisted, which matters because a skill body is untrusted text
-that may come from a downloaded repository.
+Type a query and press Enter. The source picker to the left of the search field selects which registry the search asks; the choice applies to the next search, so results always match the query that produced them.
 
-**Every skill previews**, including bundled and runtime-registered ones. Those
-have no SKILL.md the panel may open, so the host reads them through the skill
-registry instead, and the dialog labels the source honestly ("From file" / "From
-skill registry") rather than showing a path that does not exist.
+- **skillhub.cn** (default) — a China-hosted skill store with 190,000+ skills, reachable directly with no network accelerator. The site explicitly invites agent integration: it publishes an agent-facing integration document (`install/skillhub.md`), allows crawlers in `robots.txt`, and its read path is unauthenticated. Rows carry Chinese descriptions, download counts, and icons.
+- **skills.sh** — the Agent Skills registry's search endpoint. This source serves one page; the panel says so honestly instead of offering a load-more control that could only return empty.
+- **GitHub repositories** — a repository can also be browsed directly: any `owner/repo` (a full URL or a `.git` suffix also works) is enumerated through the GitHub API, and every skill directory inside it becomes a row.
 
-Frontmatter fields (name, description, when-to-use, invocation policy) are shown
-as their own definition list and are **never** mixed into the markdown: a leading
-`---` fence is a thematic break in GFM, which would turn the YAML lines into a
-heading and print the block as stray prose.
+Long result lists load the next page automatically as you scroll, with an explicit "load more" button as the keyboard/click target. Selecting a skill's name opens a detail dialog rendered by the shell's own markdown renderer — the skill reads exactly as it does in a conversation — alongside its file list and total size.
+
+**Licences are stated, never laundered.** Every result row declares its licence: declared ones show it (MIT, GPL-3.0, …); undeclared ones show *No licence declared*. In a sampled catalogue more than half of the entries declare none, and that is a fact a user needs before deciding to copy a skill to disk.
+
+### My Skills tab
+
+Skills are grouped by provenance (project, user, plugin providers, runtime registration). A skill backed by a file can be enabled or disabled — the toggle rewrites `disable-model-invocation` in its frontmatter — edited, or deleted. Skills registered by plugins at runtime have no file on disk; the panel says so once, per group, instead of decorating every row, and their enable state is stored in the panel's own configuration.
+
+### Preview
+
+Every skill can be previewed, including bundled and runtime-registered ones that have no `SKILL.md` on disk — the host falls back to the runtime skill registry for those, and the dialog labels the source honestly ("from file" / "from skill registry"). Frontmatter fields are shown as a definition list above the body and are never mixed into the markdown, because a leading `---` fence is a thematic break in GFM and would mangle the YAML into headings and stray prose.
+
+## Configuration
+
+Plugin config (profile patch):
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | Master switch; `false` mounts no routes. |
+| `githubProxies` | `string[]` | built-in chain | Accelerator prefixes for GitHub raw content, tried in order; include `""` to try direct first. |
+| `customSkillDirs` | `string[]` | `[]` | Additional skill root directories to scan. |
+| `dshHome` | `string` | `$DSH_HOME` or `~/.dsh` | Override for the user config root. |
 
 ## Security model
 
-- Every route sits behind the shared loopback fence (socket address + Host header
-  + browser same-origin markers). An unpaired LAN client receives
-  `403 forbidden: loopback-only` before any skill file is touched. When
-  `dsh-remote-web-ui` is loaded, a live paired-device cookie is an extra allow
-  path; unpaired and revoked devices still get 403.
-- **A client-submitted `path` is only an identity claim.** Before touching any
-  file the host re-scans and requires the same name to resolve to that exact
-  path, so a project skill that disappeared can never be redirected onto a
-  same-named user skill, and the routes cannot be used to write or read an
-  arbitrary path.
-- `update` carries the current enabled state over, so an edit never silently
-  re-enables a disabled skill.
-- Linked (symlinked) skills are listable and toggleable but refuse delete and
-  update: both would escape the skill root they appear under.
-- Skill body content is capped at 64 KB; deletes move the file into `.trash`
-  rather than removing it.
+- **Every route sits behind the shared loopback fence** (socket address + `Host` header + browser same-origin markers). An unpaired LAN client receives `403 forbidden: loopback-only` before any skill file is touched. When `dsh-remote-web-ui` is loaded, a live paired-device cookie is an additional allow path; unpaired and revoked devices still receive 403.
+- **A client-submitted `path` is only an identity claim.** Before touching any file, the host re-scans and requires the same skill name to resolve to that exact path. A project skill that disappeared can therefore never be redirected onto a same-named user skill, and the routes cannot be used to read or write an arbitrary path.
+- **The browser never sends a URL.** Market requests carry only the opaque skill id the host issued; repositories, refs, directories and file paths are re-derived host-side, and the id grammar is validated segment by segment, so a path traversal is rejected before it can reach any fetch.
+- **Remote fetching happens only in the host half**, behind the trust fence. The unauthenticated GitHub API allows 60 requests/hour, so only discovery (tree listing) touches it, cached for 30 minutes; file bodies come from `raw.githubusercontent.com` through an accelerator chain, which does not count against that budget. skillhub.cn is reached directly.
+- **Registry icons are proxied, not linked.** Icon URLs are fetched host-side under an explicit policy (https only, allow-listed host, image content-type, 256 KB cap) and re-served as data URLs, so the browser never loads a third-party origin: no referrer leak, no tracking pixel per render.
+- Writes are bounded (64 KB bodies), symlinks refuse delete/update (both would escape their skill root), and deletes move files into `.trash` rather than removing them.
 
-## Design notes
+## Architecture
 
-- **Native panel, not a DOM takeover.** The plugin contributes a row to the
-  shell's own sidebar panel list (`sidebar.panellist`) and its page to the
-  layout's keyed `main` slot. The shell owns the row box, the label, the active
-  highlight, the collapsed rail and the panel switch — exactly as it does for
-  the shipped Plugins and Schedule pages.
-- **Conditional registration.** Both seats go through `ctx.slots.inject`, which
-  fires only once the owning shell entry has declared the seat, so load order
-  does not matter and a shell that cannot serve the seats simply leaves the
-  panel absent instead of failing boot.
-- **Failures degrade, never throw.** A registration problem is logged; the web
-  shell fails its whole boot when a plugin apply throws, and an external plugin
-  must not take the GUI down.
-- **Host-only network access.** All remote fetching happens in the host half
-  behind a loopback trust fence, and the browser half only ever sends
-  identities (ids/names), never URLs or file lists.
+The package is a dual-half DSH plugin:
 
-## Install
+- **Host half** (`lib/index.js`, runs in the DSH server process) — serves the `/api/skills-hub/*` route family, owns all network access, file I/O, and the trust fence.
+- **Client half** (`lib/client.js`, runs in the web GUI) — registers the sidebar entry and the center-column page through the shell's official slot seats (`sidebar.panellist` and the keyed `main` slot), so the shell owns the row box, active highlight and panel switching exactly as it does for its own Plugins and Schedule pages.
+
+The client is built only on the host's frozen browser module table (`react`, `@deepseek-ai/cordis`, `@deepseek-ai/dsh-client-ui-*`); every control is the official shared primitive (`Button`, `Switch`, `Input`, `Menu`, `Modal`, `MarkdownText`, …) — nothing is hand-drawn. Registration failures are logged and degrade the panel; they never fail the GUI's boot.
+
+## Development
 
 ```sh
-dsh plugin --profile <name> add link:E:\Code\DSH-SkillsHub
+pnpm install
+pnpm typecheck        # tsc --noEmit
+pnpm build            # tsc -b tsconfig.build.json && tsdown
 ```
 
-A `cordis.patch.yml` bundle-row change takes effect on the next DSH service
-start. After the restart the sidebar shows a **Skills Hub** row.
+Test suites (run with `node tests/<file>.mjs`):
 
-## Build
+| Suite | Scope |
+| --- | --- |
+| `m0-smoke.mjs` | Loads both bundles the way the host does; asserts the loader contract, injected-require usage and route registration. |
+| `m1-host.mjs` | Drives the route family against a real temporary skill tree: scan grading, write-route identity checks, symlink protection, fence denials. |
+| `market.mjs` | Market layer with fake transports, zero network: aggregation, dedup, id grammar (incl. path-escape attempts), source contracts. |
+| `ui-structure.mjs` | UI guards: official-primitives-only, card anatomy, scroll height chain — each negative-controlled. |
+| `theme-tokens.mjs` | Verifies every referenced CSS custom property exists in the shipped theme, because an undefined token makes `var()` silently drop the whole declaration. |
+| `market-live*.mjs`, `icon-live.mjs`, `tools/scroll-selftest.mjs` | Manual, live-network / real-browser smoke tests; not part of the automated gate. |
 
-The toolchain is the runtime-bundled Node/pnpm; `dsh` is not on `PATH`.
-
-```sh
-node <dsh-runtime>/dependencies/node/bin/node.exe <dsh-runtime>/dependencies/pnpm/bin/pnpm.mjs install
-node node_modules/typescript/bin/tsc --noEmit          # typecheck
-node node_modules/tsdown/dist/run.mjs                  # build lib/index.js + lib/client.js
-node node_modules/typescript/bin/tsc -b tsconfig.build.json   # emit lib/types
-node tests/m0-smoke.mjs                                # bundle contract smoke test
-node tests/m1-host.mjs                                 # host logic against a real temp skill tree
-node tests/theme-tokens.mjs                            # theme token guard
-```
-
-`tests/theme-tokens.mjs` exists because an undefined CSS custom property makes
-`var()` resolve to nothing, silently dropping the whole declaration — a typo in a
-theme token is an invisible style bug, not an error. It harvests the real token
-names out of the shipped `app.asar` and fails when this package references one
-that is not defined.
-
-## Layout
+## Project layout
 
 ```
-src/index.ts              host half: route family + mountOnce guard
-src/routes.ts             /api/skills-hub/* handlers
-src/core/frontmatter.ts   zero-dependency SKILL.md frontmatter parse/rewrite
-src/core/collect.ts       multi-root scan + rank resolution + registry merge + writes
-src/core/provider-toggles.ts  panel-local switch store for plugin-provided skills
-src/access.ts             trust fence (loopback + paired-device cookie)
-src/loopback.ts           socket/Host/same-origin checks
-src/pair-access.ts        paired-device allow path
-src/http.ts               bounded body reader, JSON writer, identity-encoding fetch init
-src/client/index.ts       browser half: dictionaries + panel wiring
-src/client/native-panel.tsx  the two slot registrations
-src/client/skill-filter.ts   pure query/workspace filtering
-src/client/panel/         controller, panel shell, the four tabs, CSS Modules
-tests/m0-smoke.mjs        loads both bundles the way the host does and asserts contracts
-tests/m1-host.mjs         drives the routes against real files in a temp tree
-tests/theme-tokens.mjs    theme token guard (asar ground truth, negative-controlled)
+src/
+  index.ts                host entry: plugin contract, config, mount-once guard
+  routes.ts               /api/skills-hub/* handlers
+  access.ts, loopback.ts,
+  pair-access.ts          trust fence (loopback + paired-device cookie)
+  http.ts                 bounded body reader, JSON writer
+  core/                   multi-root skill scan, frontmatter parse/rewrite,
+                          provider toggle store
+  market/                 source registry: fetch limits, TTL caches, accelerator
+                          chain, skill-id codec, source adapters
+  client/                 browser half: dictionaries, slot registrations, panel
+tests/                    automated suites (see Development)
+docs/                     design documents (Chinese)
 ```
+
+## Roadmap
+
+| Milestone | Scope | Status |
+| --- | --- | --- |
+| M0 | Plugin skeleton, sidebar entry, build pipeline | ✅ Shipped |
+| M1 | Local management: browse / enable / edit / create / delete / preview | ✅ Shipped |
+| M2 | Market: multi-source search, detail preview, paging, icons | ✅ Shipped |
+| M3 | Installation engine: validation, size caps, atomic writes, provenance | Planned |
+| M4 | Lifecycle: provenance store, update checks, local-modification detection | Planned |
+| M5 | Custom registry manifests, offline import, accelerator settings UI | Planned |
 
 ## License
 
-BSD-3-Clause.
+[BSD-3-Clause](LICENSE) © WLX2007

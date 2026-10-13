@@ -1,150 +1,139 @@
 # @wulongxi/dsh-skills-hub
 
-DeepSeek Harness (DSH) **技能中心** —— 一个原生 Web GUI 面板，用于浏览和搜索
-**网络上的**技能库、把技能安装到用户/项目根，并管理或创建本地技能。
+**Skills Hub（技能中心）** 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的一个插件，在 Web GUI 中添加一个原生面板，用于发现、安装和管理 Agent Skills。
 
-> 状态：**M1（本地管理）**。侧边栏入口、原生中栏面板、host 路由族、信任围栏与构建管线均已
-> 完成并通过验证。本地技能可以浏览、启停、创建、编辑与删除。市场检索与安装引擎在 M2-M4 交付
-> （见 `docs/` 下的开发方案）。
+一个面板提供三项能力：
 
-## 功能
+- **市场** —— 搜索在线技能库（默认源 [skillhub.cn](https://skillhub.cn)，另有 skills.sh 与任意公开 GitHub 仓库），预览技能的完整文档，并在决定安装前查看其文件清单。
+- **我的技能** —— 按来源分组浏览运行时加载的全部技能；启用/停用技能、编辑其 `SKILL.md`、或将其删除（删除移入 `.trash`，不直接丢失）。
+- **创建** —— 把新技能写入用户级或项目级技能根，frontmatter 处理由面板代劳。
 
-| 页签 | 作用 | 状态 |
-| --- | --- | --- |
-| 市场 | 搜索网络技能库、预览 `SKILL.md`、安装到用户或项目根 | 搜索与详情**已完成**；安装 M3 |
-| 我的技能 | 按来源浏览已加载技能、启用/停用、编辑、删除 | **已完成** |
-| 创建 | 把新技能写入用户或项目根 | **已完成** |
+面板读取官方技能根（`<项目>/.dsh/skills`、`<项目>/.agents/skills`、`~/.dsh/skills`、`~/.agents/skills`，加上配置的 `customSkillDirs`），并与宿主技能注册表合并——面板显示的技能就是模型实际收到的技能。
 
-面板读取官方技能根（`<项目>/.dsh/skills`、`<项目>/.agents/skills`、`~/.dsh/skills`、
-`~/.agents/skills`，加上配置的 `customSkillDirs`），再与宿主技能注册表合并，
-因此面板显示的技能就是模型实际收到的那个。
+| | |
+|---|---|
+| 状态 | 市场搜索与预览：**已可用**。技能安装：规划中（见[路线图](#路线图)）。 |
+| 要求 | DSH `>= 0.2.0-rc.2` |
+| 许可证 | [BSD-3-Clause](LICENSE) |
+| 语言 | 简体中文、English（跟随 GUI 语言设置） |
 
-## 技能市场
-
-「市场」页搜索网络上的技能库。三个来源，**skillhub.cn 为默认源**：
-
-- **skillhub.cn** —— 国内 Skill 商店，19 万+ 技能，直连无需加速节点。该站点主动邀请
-  Agent 集成（发布 `install/skillhub.md` 供 Agent 读取、robots.txt 全开放、读路径全程
-  无鉴权）。带中文描述、下载量与评分。
-- **skills.sh** —— Agent Skills 注册中心的搜索接口。
-- **GitHub 仓库直连** —— 输入 `owner/repo`（完整 URL、`.git` 后缀均可），枚举其中全部技能目录。
-
-搜索结果与本地技能同一套卡片样式；点技能名打开详情，正文用 shell 自己的 markdown 渲染器
-呈现，并列出该技能包含的全部文件。**每个结果都标注许可证**——声明了就显示（如 MIT、
-GPL-3.0），未声明则显示"未声明许可证"：抽样中过半技能未声明，这是用户决定是否安装前
-必须知道的事实。来源失效时页面降级而非空白。
-
-**网络策略**（都来自实测约束，详见 `docs/技能市场插件开发方案.md` M2 一节）：
-
-- 未认证 GitHub API 只有 **60 次/小时**，所以只有"发现"（列目录）才碰 API，且缓存 30 分钟；
-  正文一律读 raw.githubusercontent.com（不限次）。skillhub.cn 完全不走 GitHub。
-- GitHub 正文经加速节点链获取（直连优先，失败逐个降级）；skillhub.cn 直连。
-- 客户端只回传 host 发的**不透明技能 id**，URL、仓库、路径一律由 host 从 id 重建；
-  id 文法在解码时逐段校验，路径逃逸在到达任何 fetch 之前被拒绝。
-
-## 路由
-
-| 路由 | 方法 | 说明 |
-| --- | --- | --- |
-| `api/skills-hub/list` | GET | 按来源分级的本地技能列表 |
-| `api/skills-hub/read` | GET | 单个技能的可编辑字段与正文 |
-| `api/skills-hub/preview` | GET | 技能预览（文件优先，回退技能注册表） |
-| `api/skills-hub/market/search` | GET | 市场检索（多源聚合去重） |
-| `api/skills-hub/market/detail` | GET | 一个市场技能的可读详情 |
-| `api/skills-hub/market/list-repo` | GET | 枚举一个仓库下的全部技能 |
-| `api/skills-hub/market/sources` | GET | 市场来源清单 |
-| `api/skills-hub/set-enabled` | POST | 启用/停用（改写 `disable-model-invocation`） |
-| `api/skills-hub/set-provider-enabled` | POST | 面板本地开关插件提供的技能 |
-| `api/skills-hub/create` | POST | 在用户或项目根创建技能 |
-| `api/skills-hub/update` | POST | 原地改写已有技能 |
-| `api/skills-hub/delete` | POST | 移入 `.trash` |
-| `api/skills-hub/health` | GET | 健康检查与能力探测 |
-
-## 技能预览
-
-点卡片上的技能名（或「预览」）打开预览弹窗。正文用 shell 自己的 markdown 渲染器
-（官方 `MarkdownText`）呈现，因此在会话里和在这里看到的排版、代码块与复制按钮完全一致；
-不可信 HTML 被禁用，链接协议走白名单——技能正文来自网络下载仓库时这一点很重要。
-
-**每一条技能都能预览**，包括系统内置与运行时注册的：它们没有可打开的 SKILL.md，host 改用
-技能注册表读取正文。弹窗会如实标注来源（「来自文件」/「来自技能注册表」），不会假装存在一个磁盘路径。
-
-frontmatter 字段（技能名 / 描述 / 适用场景 / 可调用性）单独以定义列表呈现，**不混进 markdown**：
-开头那行 `---` 在 GFM 里是主题分隔线，会把上面的 YAML 字段变成标题、整块渲染成零散散文。
-
-
-## 安全模型
-
-- 全部路由都在共享 loopback 围栏之后（套接字地址 + Host 头 + 浏览器同源标记）。未配对的
-  局域网客户端在触碰任何技能文件之前即收到 `403 forbidden: loopback-only`。装了
-  `dsh-remote-web-ui` 时，有效的已配对设备 cookie 是额外放行路径；未配对与已撤销设备仍 403。
-- **客户端提交的 `path` 只是身份声明。** 执行修改前，最新一次重扫必须把同名技能解析到完全相同
-  的路径。因此项目技能消失后，同名操作不会落到用户级技能上；这些路由也无法被用来读写任意路径。
-- `update` 会原样保留当前启用状态，编辑不会静默把已停用的技能重新启用。
-- 符号链接技能可列出、可启停，但拒绝删除与编辑——两者都会越出它所在的技能根。
-- 技能正文上限 64 KB；删除是把文件移入 `.trash` 而不是直接抹掉。
-
-## 设计要点
-
-- **原生面板，不做 DOM 接管。** 插件往 shell 自己的侧边栏面板列表
-  （`sidebar.panellist`）贡献一行、往布局的 keyed `main` 槽贡献页面。行盒、标签、
-  高亮、折叠轨道与面板切换全部归 shell——与官方插件页、定时任务页完全一致。
-- **条件注册。** 两个座位都经 `ctx.slots.inject`，只在拥有该座位的 shell 条目声明
-  之后才触发，因此加载顺序无关紧要；不支持这些座位的 shell 只是让面板不出现，不会
-  导致启动失败。
-- **失败降级，绝不抛出。** 注册问题只记录日志；web shell 在插件 apply 抛错时会整体
-  启动失败，外部插件不能把 GUI 拖垮。
-- **网络访问只在 host 半区。** 所有远程抓取都在 host 半区、位于 loopback 信任围栏
-  之后；浏览器半区只发送身份（id/名称），从不发送 URL 或文件清单。
+---
 
 ## 安装
 
-```sh
-dsh plugin --profile <名称> add link:E:\Code\DSH-SkillsHub
-```
-
-`cordis.patch.yml` 这类 bundle 行变化需要**重启 DSH 服务**才生效。重启后侧边栏出现
-**技能中心**一行。
-
-## 构建
-
-工具链用运行时自带的 Node/pnpm；`dsh` 不在 `PATH` 上。
+### 从本地检出（link 安装）
 
 ```sh
-node <dsh-runtime>/dependencies/node/bin/node.exe <dsh-runtime>/dependencies/pnpm/bin/pnpm.mjs install
-node node_modules/typescript/bin/tsc --noEmit          # 类型检查
-node node_modules/tsdown/dist/run.mjs                  # 构建 lib/index.js + lib/client.js
-node node_modules/typescript/bin/tsc -b tsconfig.build.json   # 产出 lib/types
-node tests/m0-smoke.mjs                                # bundle 合约冒烟测试
-node tests/m1-host.mjs                                 # 针对真实临时技能目录的 host 逻辑测试
-node tests/theme-tokens.mjs                            # 主题 token 守卫
+dsh plugin --profile <profile> add link:<本仓库路径>
 ```
 
-`tests/theme-tokens.mjs` 的存在理由：CSS 自定义属性未定义时 `var()` 解析为空，整条声明被
-**静默丢弃**——主题 token 写错是看不见的样式 bug，而不是报错。该守卫从应用打包的 `app.asar`
-中提取真实的 token 名，本包引用了未定义的 token 就失败。
+重启 DSH 服务后，侧边栏出现**技能中心**入口；选中即在中央栏打开面板。
 
-## 目录
+### 从 npm 安装（发布后）
 
-```
-src/index.ts              host 半区：路由族 + mountOnce 防重
-src/routes.ts             /api/skills-hub/* 处理器
-src/core/frontmatter.ts   零依赖 SKILL.md frontmatter 解析/改写
-src/core/collect.ts       多根扫描 + rank 决出 + 注册表合并 + 写操作
-src/core/provider-toggles.ts  插件提供技能的面板本地开关存储
-src/access.ts             信任围栏（loopback + 已配对设备 cookie）
-src/loopback.ts           套接字 / Host / 同源检查
-src/pair-access.ts        已配对设备放行路径
-src/http.ts               限长 body 读取、JSON 写出、identity 编码 fetch init
-src/client/index.ts       browser 半区：字典注册 + 面板装配
-src/client/native-panel.tsx  两个槽位注册
-src/client/skill-filter.ts   纯函数查询/工作区过滤
-src/client/panel/         controller、面板壳、四个页签、CSS Modules
-tests/m0-smoke.mjs        按 host 的方式加载两个 bundle 并断言合约
-tests/m1-host.mjs         在临时目录树上驱动真实路由
-tests/theme-tokens.mjs    主题 token 守卫（asar 基准 + 负向控制）
+```sh
+dsh plugin --profile <profile> add @wulongxi/dsh-skills-hub
 ```
 
-## License
+## 使用
 
-BSD-3-Clause。
+### 市场页
+
+输入关键词回车即搜索。搜索框左侧的来源选择器决定本次搜索询问哪个注册站；选择作用于下一次搜索，因此列表永远与产生它的查询一致。
+
+- **skillhub.cn**（默认）—— 国内 Skill 商店，19 万+ 技能，直连无需加速节点。该站点明确邀请 Agent 集成：发布面向 Agent 的集成文档（`install/skillhub.md`）、robots.txt 全开放、读路径全程无鉴权。结果带中文描述、下载量与图标。
+- **skills.sh** —— Agent Skills 注册中心的搜索接口。该来源只服务一页；面板如实说明，而不是提供一个只会返回空结果的"加载更多"按钮。
+- **GitHub 仓库** —— 仓库也可以直接浏览：输入 `owner/repo`（完整 URL、`.git` 后缀均可），面板通过 GitHub API 枚举其中每一个技能目录。
+
+长结果列表滚动到底自动加载下一页，并保留显式的「加载更多」按钮作为键盘/点击目标。点技能名打开详情弹窗，正文由 shell 自己的 markdown 渲染器呈现——与在会话中读到的排版完全一致——并列出文件清单与总大小。
+
+**许可证如实标注，绝不粉饰。** 每条结果都声明其许可证：声明了的直接显示（MIT、GPL-3.0 等）；未声明的显示*未声明许可证*。抽样目录中过半条目未声明，而这是用户决定是否把技能复制到磁盘前必须知道的事实。
+
+### 我的技能页
+
+技能按来源分组（项目、用户、插件提供方、运行时注册）。有文件支撑的技能可以启用/停用——开关会改写其 frontmatter 中的 `disable-model-invocation`——可以编辑、删除。运行时由插件注册的技能磁盘上没有文件；面板按组说明一次，而不是在每一行上重复，其启用状态保存在面板自己的配置中。
+
+### 预览
+
+每条技能都能预览，包括磁盘上没有 `SKILL.md` 的内置与运行时注册技能——host 对它们回退到运行时技能注册表，弹窗如实标注来源（「来自文件」/「来自技能注册表」）。frontmatter 字段以定义列表呈现在正文上方，绝不混入 markdown：开头那行 `---` 在 GFM 里是主题分隔线，会把 YAML 变成标题和零散散文。
+
+## 配置
+
+插件配置（profile patch）：
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | 总开关；`false` 时不挂载任何路由。 |
+| `githubProxies` | `string[]` | 内置降级链 | GitHub raw 内容的加速前缀，按序尝试；包含 `""` 表示先试直连。 |
+| `customSkillDirs` | `string[]` | `[]` | 额外扫描的技能根目录。 |
+| `dshHome` | `string` | `$DSH_HOME` 或 `~/.dsh` | 覆盖用户配置根。 |
+
+## 安全模型
+
+- **全部路由位于共享 loopback 围栏之后**（套接字地址 + `Host` 头 + 浏览器同源标记）。未配对的局域网客户端在触碰任何技能文件之前即收到 `403 forbidden: loopback-only`。装载 `dsh-remote-web-ui` 时，有效的已配对设备 cookie 是额外放行路径；未配对与已撤销设备仍收到 403。
+- **客户端提交的 `path` 只是身份声明。** 触碰任何文件之前，host 重新扫描并要求同名技能解析到完全相同的路径。因此消失的项目技能不可能被重定向到同名的用户级技能上，这些路由也无法被用来读写任意路径。
+- **浏览器从不发送 URL。** 市场请求只携带 host 签发的不透明技能 id；仓库、ref、目录与文件路径一律由 host 侧重建，且 id 文法逐段校验，路径逃逸在到达任何 fetch 之前即被拒绝。
+- **远程抓取只发生在 host 半区**，位于信任围栏之后。未认证 GitHub API 允许 60 次/小时，因此只有"发现"（列目录）碰它，并缓存 30 分钟；文件正文经加速节点链从 `raw.githubusercontent.com` 读取，不占用该预算。skillhub.cn 直连。
+- **注册站图标走代理而非直链。** 图标 URL 由 host 侧按显式策略抓取（仅 https、域名白名单、图片类型、256 KB 上限）并转为 data URL 回传，浏览器从不加载第三方源：无 referrer 泄漏、无逐次渲染的追踪请求。
+- 写操作有上限（正文 64 KB）、符号链接技能拒绝删除/编辑（两者都会越出其技能根）、删除移入 `.trash` 而非直接抹除。
+
+## 架构
+
+本包是双半区 DSH 插件：
+
+- **host 半区**（`lib/index.js`，运行于 DSH 服务进程）—— 服务 `/api/skills-hub/*` 路由族，独占网络访问、文件 I/O 与信任围栏。
+- **client 半区**（`lib/client.js`，运行于 Web GUI）—— 经 shell 的官方槽位（`sidebar.panellist` 与 keyed `main` 槽）注册侧边栏入口与中央栏页面，行盒、高亮与面板切换全部归 shell 所有，与官方插件页、定时任务页完全一致。
+
+客户端只构建在宿主冻结的浏览器模块表之上（`react`、`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-ui-*`）；每个控件都是官方共享原语（`Button`、`Switch`、`Input`、`Menu`、`Modal`、`MarkdownText` 等）——不手搓任何控件。注册失败只记录日志并降级面板，绝不拖垮 GUI 启动。
+
+## 开发
+
+```sh
+pnpm install
+pnpm typecheck        # tsc --noEmit
+pnpm build            # tsc -b tsconfig.build.json && tsdown
+```
+
+测试套件（`node tests/<file>.mjs` 运行）：
+
+| 套件 | 范围 |
+| --- | --- |
+| `m0-smoke.mjs` | 按 host 的方式加载两个 bundle；断言 loader 合约、注入 require 的使用与路由注册。 |
+| `m1-host.mjs` | 在真实临时技能目录树上驱动路由族：扫描分级、写路由身份校验、符号链接保护、围栏拒绝。 |
+| `market.mjs` | 市场层 fake transport 零网络：聚合、去重、id 文法（含路径逃逸尝试）、来源合约。 |
+| `ui-structure.mjs` | UI 守卫：只用官方原语、卡片 anatomy、滚动高度链——每条都有负向控制。 |
+| `theme-tokens.mjs` | 校验引用的每个 CSS 自定义属性都存在于发行主题中——未定义的 token 会让 `var()` 静默丢弃整条声明。 |
+| `market-live*.mjs`、`icon-live.mjs`、`tools/scroll-selftest.mjs` | 手动的真网络 / 真浏览器冒烟；不进自动门禁。 |
+
+## 目录结构
+
+```
+src/
+  index.ts                host 入口：插件合约、配置、mount-once 防重
+  routes.ts               /api/skills-hub/* 处理器
+  access.ts, loopback.ts,
+  pair-access.ts          信任围栏（loopback + 已配对设备 cookie）
+  http.ts                 限长 body 读取、JSON 写出
+  core/                   多根技能扫描、frontmatter 解析/改写、
+                          插件提供技能的开关存储
+  market/                 市场源注册：抓取限额、TTL 缓存、加速链、
+                          skill-id 编解码、来源适配器
+  client/                 browser 半区：字典、槽位注册、面板
+tests/                    自动化套件（见「开发」）
+docs/                     设计文档（中文）
+```
+
+## 路线图
+
+| 里程碑 | 范围 | 状态 |
+| --- | --- | --- |
+| M0 | 插件骨架、侧边栏入口、构建管线 | ✅ 已交付 |
+| M1 | 本地管理：浏览 / 启停 / 编辑 / 创建 / 删除 / 预览 | ✅ 已交付 |
+| M2 | 市场：多源搜索、详情预览、分页、图标 | ✅ 已交付 |
+| M3 | 安装引擎：校验、限额、原子写入、provenance | 规划中 |
+| M4 | 生命周期：来源记录、更新检查、本地修改检测 | 规划中 |
+| M5 | 自定义注册清单、离线导入、加速节点设置界面 | 规划中 |
+
+## 许可证
+
+[BSD-3-Clause](LICENSE) © WLX2007
