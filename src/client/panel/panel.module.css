@@ -25,13 +25,27 @@
 
 /* --- page frame ---------------------------------------------------------- */
 
+/* The mount wrapper the main-slot registration puts around the page (see
+   native-panel.tsx). It sits between the shell's center column and .page, so
+   IT is the flex child that must carry the definite height down: without
+   height:100% here the wrapper is content-sized, and .page's height:100%
+   resolves against an auto-height parent — i.e. not at all — which was the
+   real reason the panel never scrolled. (An earlier revision left this rule
+   missing entirely: css.view was undefined and the wrapper went unstyled.) */
+.view {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
 /* The page IS the scroll surface, exactly as the shipped plugin-manager page
    is (its .page: height:100%; flex column; overflow:auto — verified against
-   the installed bundle). The slot anchor renders with display:contents, so
-   this element is a direct flex child of the shell's center column, which is
-   an overflow:hidden grid row of minmax(0,1fr): the height arriving here is
-   definite, flex-shrink pins the element to it, and the content overflow
-   becomes this element's scrollbar. */
+   the shipped bundle). It sits inside the .view mount wrapper (above), which
+   hands it the center column's definite height; the content overflow becomes
+   this element's scrollbar. */
 .page {
   display: flex;
   flex-direction: column;

@@ -24,3 +24,6 @@ reference/
 # Editors.
 .vscode/
 .idea/
+
+# ACL 诊断与恢复记录（本地工具产物）
+.acl-recovery/

@@ -62,6 +62,7 @@ function stripComments(source) {
 }
 
 const css = readFileSync(CSS_PATH, 'utf8')
+const nativePanelSource = stripComments(readFileSync(join(ROOT, 'src/client/native-panel.tsx'), 'utf8'))
 
 /**
  * The body of one top-level CSS rule, e.g. `cssBlock('.page')`.
@@ -190,14 +191,27 @@ check('the market offers no install action before the installer exists', () => {
 
 console.log('\nthe scroll height chain stays intact')
 
-// The slot anchor renders with display:contents (verified in the installed
-// renderer bundle), so .page is a direct flex child of the shell's center
-// column — an overflow:hidden grid row of minmax(0,1fr) with a definite
-// height. The shipped plugin-manager page scrolls ITSELF (.page: height:100%;
-// overflow:auto), and this panel does the same. Shipping the wrong model — a
-// clipped .page with an inner scroll surface, or a page with no definite
-// height — shows up as a list that cannot scroll at all, which is how the
-// market tab shipped twice, so the chain is pinned rule by rule.
+// The main-slot registration wraps the page in a .view mount wrapper (see
+// native-panel.tsx), so the chain is: shell center column (overflow:hidden,
+// definite height) → .view → .page. The wrapper is the flex child that must
+// carry the definite height down — an unstyled wrapper is content-sized, and
+// .page's height:100% then resolves against an auto-height parent, which is
+// how the market tab shipped twice unable to scroll. The shipped
+// plugin-manager page scrolls ITSELF (.page: height:100%; overflow:auto), and
+// this panel does the same. Shipping the wrong model — a clipped .page with an
+// inner scroll surface, a page with no definite height, or a broken wrapper —
+// shows up as a list that cannot scroll at all, so the chain is pinned rule by
+// rule.
+check('.view carries the definite height down to the page', () => {
+  const view = cssBlock('.view')
+  if (!/height:\s*100%/.test(view)) {
+    throw new Error('.view must fill the center column height — without it .page height:100% resolves to auto')
+  }
+  if (!nativePanelSource.includes('css.view')) {
+    throw new Error('native-panel.tsx must apply css.view to the mount wrapper it renders')
+  }
+})
+
 check('.page is the scroll surface with a definite height', () => {
   const page = cssBlock('.page')
   if (!/height:\s*100%/.test(page)) throw new Error('.page must fill the center column height')
