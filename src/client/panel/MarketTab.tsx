@@ -1,11 +1,13 @@
 /**
- * Market tab: search the online skill registries and read a skill's detail.
+ * Market tab: search the online skill registries, read a skill's detail and
+ * install it into a local skill root.
  *
  * The tab is a page in the shipped shape: a search field, a results list built
  * from the same card anatomy the skills list uses, and a detail dialog rendered
- * by the shell's own markdown renderer. What it deliberately does NOT have yet
- * is an install action — that is the next milestone, and until the host serves
- * it the tab offers nothing that can only fail.
+ * by the shell's own markdown renderer. The detail dialog carries the install
+ * action: a skill is installed AFTER its body has been read, which keeps the
+ * licence warning and the file list — the facts an informed install needs —
+ * on the same screen as the button.
  *
  * A search spans every source the host registers. A source that is down
  * degrades the page: its rows are absent and the failure is reported as a
@@ -27,6 +29,7 @@ import {
   Modal,
   PathLabel,
   Pill,
+  SegmentedControl,
   Switch,
   Tag,
   TextShimmer,
@@ -392,6 +395,16 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
   const [error, setError] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const loadSeq = useRef(0)
+  // Install state: the target root is chosen before the button is pressed, and
+  // the confirmation step is where the licence warning is read — an install
+  // that never showed the user what they are agreeing to copy would make the
+  // licence tag on the row decorative.
+  const [installRoot, setInstallRoot] = useState<'user' | 'project'>('user')
+  const [confirming, setConfirming] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const [installedPath, setInstalledPath] = useState<string | undefined>(undefined)
+  const [installError, setInstallError] = useState<string | undefined>(undefined)
+  const [cwd, setCwd] = useState<string | undefined>(undefined)
 
   const load = async (): Promise<void> => {
     const seq = ++loadSeq.current
@@ -416,6 +429,23 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
   }, [api, id])
 
   const skill = detail?.skill
+  const licence = skill?.licence
+
+  const doInstall = async (): Promise<void> => {
+    setConfirming(false)
+    setInstalling(true)
+    setInstallError(undefined)
+    try {
+      const workspace = cwd ?? (await api.list()).cwd
+      setCwd(workspace)
+      const result = await api.marketInstall(id, installRoot, workspace)
+      setInstalledPath(result.path)
+    } catch (err) {
+      setInstallError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setInstalling(false)
+    }
+  }
 
   return (
     <Modal
@@ -460,10 +490,10 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
           <dl className={css.previewMetaList} data-dsh-part="preview-meta">
             <dt className={css.previewMetaKey}>{tt('preview.field.name')}</dt>
             <dd className={css.previewMetaValue}><code className={css.previewCode}>{detail.skill.name}</code></dd>
-            {detail.skill.licence !== undefined && (
+            {licence !== undefined && (
               <>
                 <dt className={css.previewMetaKey}>{tt('market.licence.field')}</dt>
-                <dd className={css.previewMetaValue}><LicenceTag licence={detail.skill.licence} /></dd>
+                <dd className={css.previewMetaValue}><LicenceTag licence={licence} /></dd>
               </>
             )}
             {detail.frontmatter.whenToUse !== undefined && detail.frontmatter.whenToUse !== '' && (
@@ -497,7 +527,66 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
               )}
             </p>
           )}
+
+          {/* Install: root choice, then the action. An installed skill needs no
+              second click — the success line carries the path it landed at. */}
+          <div className={css.installRow} data-dsh-part="market-install">
+            {installedPath !== undefined ? (
+              <p className={css.feedback} data-kind="ok">{tt('market.installedAt', { path: installedPath })}</p>
+            ) : (
+              <>
+                <SegmentedControl
+                  id="skills-hub-install-root"
+                  value={installRoot}
+                  options={[
+                    { value: 'user', label: tt('create.root.user') },
+                    { value: 'project', label: tt('create.root.project') },
+                  ]}
+                  onChange={setInstallRoot}
+                  label={tt('market.installRoot')}
+                />
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={installing}
+                  onClick={() => { setConfirming(true) }}
+                >
+                  {installing ? tt('market.installing') : tt('market.install')}
+                </Button>
+              </>
+            )}
+          </div>
+          {installError !== undefined && (
+            <p className={css.feedback} data-kind="error">{tt('market.installFailed', { error: installError })}</p>
+          )}
         </div>
+      )}
+      {confirming && skill !== undefined && (
+        <Modal
+          open
+          onClose={() => { setConfirming(false) }}
+          title={tt('market.confirmTitle', { name: skill.name })}
+          description={tt('market.confirmBody', {
+            root: installRoot === 'user' ? tt('create.root.user') : tt('create.root.project'),
+          })}
+          closeLabel={tt('common.cancel')}
+          className={css.previewDialog}
+          footer={(
+            <div className={css.formActions}>
+              <Button variant="outline" size="md" onClick={() => { setConfirming(false) }}>{tt('common.cancel')}</Button>
+              <Button variant="primary" size="md" onClick={() => { void doInstall() }}>{tt('market.confirmInstall')}</Button>
+            </div>
+          )}
+        >
+          {/* The licence warning states itself in the confirm step: an
+              undeclared licence must be read at the moment of decision, not
+              only as a tag rows away. */}
+          <p className={css.confirmLicence} data-dsh-part="install-licence">
+            {licence?.state === 'declared'
+              ? tt('market.confirmLicence', { licence: licence.licence })
+              : tt('market.confirmLicenceUndeclared')}
+          </p>
+        </Modal>
       )}
     </Modal>
   )

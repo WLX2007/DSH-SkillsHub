@@ -107,7 +107,7 @@ function hostLibraryConfig(): UserConfig {
     // Emitting the module under its own entry sidesteps the folding entirely:
     // each entry keeps its own bindings. The object form fixes the file name,
     // which a path entry would derive as a content-hashed chunk name.
-    entry: { index: 'src/index.ts', market: 'src/market/registry.ts' },
+    entry: { index: 'src/index.ts', market: 'src/market/index.ts' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

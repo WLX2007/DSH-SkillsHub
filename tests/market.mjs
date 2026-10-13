@@ -466,4 +466,140 @@ await check('detail of a foreign-origin row is refused', async () => {
   assert.equal(detail, undefined)
 })
 
+console.log('\ninstaller: staged writes, path safety and provenance')
+
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { installSkill, installName, isSafeRelPath } from '../lib/market.js'
+
+/** A market whose detail and readFile come from canned answers. */
+function fakeMarket(detail, files) {
+  return {
+    detail: async () => detail,
+    readFile: async (_id, relPath) => {
+      const body = files.get(relPath)
+      if (body === undefined) throw new Error(`no canned body for ${relPath}`)
+      return body
+    },
+  }
+}
+
+/** Build a detail row for a skillhub skill named `name`. */
+function detailFor(name, filePaths, licence) {
+  const files = filePaths.map(path => ({ path, size: 10 }))
+  return {
+    skill: {
+      id: 'skillhub:demo-skill', name, description: 'd', provider: 'skillhub',
+      sourceLabel: 'skillhub.cn', origin: { kind: 'skillhub', slug: 'demo-skill' },
+      ...(licence === undefined ? {} : { licence }),
+    },
+    body: 'body', frontmatter: {}, files, totalBytes: files.length * 10,
+  }
+}
+
+await check('a manifest path cannot escape the skill directory', () => {
+  for (const bad of ['../evil.md', 'a/../../b', '/abs.md', 'a\\b.md', '', 'a//b.md', '..\\..\\x']) {
+    if (isSafeRelPath(bad)) throw new Error(`unsafe path accepted: ${JSON.stringify(bad)}`)
+  }
+  if (!isSafeRelPath('SKILL.md') || !isSafeRelPath('scripts/run.py')) {
+    throw new Error('safe relative paths rejected')
+  }
+})
+
+await check('a skill whose name is not kebab-case is refused, not mangled', () => {
+  assert.throws(() => installName('My Skill', 'also bad'), /valid skill name/)
+  assert.equal(installName('My Skill', 'pdf-tool'), 'pdf-tool')
+  assert.equal(installName('pdf-tool', 'ignored'), 'pdf-tool')
+})
+
+await check('install stages then renames, leaving provenance and no residue', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'skills-hub-m3-'))
+  try {
+    const files = new Map([['SKILL.md', '---\nname: demo-skill\n---\nbody'], ['scripts/run.py', 'print(1)']])
+    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md', 'scripts/run.py'], { state: 'declared', licence: 'MIT' }), files)
+    const result = await installSkill(market, 'skillhub:demo-skill', 'user', home, home, '0.3.0')
+    assert.equal(result.name, 'demo-skill')
+    assert.equal(result.root, 'user')
+    const dir = join(home, 'skills', 'demo-skill')
+    const body = await readFile(join(dir, 'SKILL.md'), 'utf8')
+    assert.match(body, /body$/)
+    const script = await readFile(join(dir, 'scripts', 'run.py'), 'utf8')
+    assert.equal(script, 'print(1)')
+    const provenance = JSON.parse(await readFile(join(dir, '.skills-hub.json'), 'utf8'))
+    assert.equal(provenance.id, 'skillhub:demo-skill')
+    assert.equal(provenance.licence.licence, 'MIT')
+    // No staging directory survives.
+    const leftovers = (await readdir(home, { withFileTypes: true }))
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+    assert.deepEqual(leftovers, ['skills'])
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+await check('a failed download leaves no residue and no target directory', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'skills-hub-m3-'))
+  try {
+    const files = new Map([['SKILL.md', 'body']])
+    files.set('scripts/run.py', undefined) // readFile will throw for this one
+    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md', 'scripts/run.py']), files)
+    await assert.rejects(
+      () => installSkill(market, 'skillhub:demo-skill', 'user', home, home, '0.3.0'),
+      /no canned body/,
+    )
+    // The staging residue is cleaned up and nothing was renamed into place:
+    // no `demo-skill` directory exists anywhere under the root.
+    const leftovers = await readdir(join(home, 'skills'))
+    assert.deepEqual(leftovers, [], 'a failed install must leave no directory behind')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+await check('installing over an existing skill is a 409-shaped error, never an overwrite', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'skills-hub-m3-'))
+  try {
+    await mkdir(join(home, 'skills', 'demo-skill'), { recursive: true })
+    await writeFile(join(home, 'skills', 'demo-skill', 'SKILL.md'), 'original', 'utf8')
+    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md']), new Map([['SKILL.md', 'new']]))
+    await assert.rejects(
+      () => installSkill(market, 'skillhub:demo-skill', 'user', home, home, '0.3.0'),
+      /already exists/,
+    )
+    assert.equal(await readFile(join(home, 'skills', 'demo-skill', 'SKILL.md'), 'utf8'), 'original')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+await check('an unsafe manifest path is refused before anything is written', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'skills-hub-m3-'))
+  try {
+    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md', '../evil.md']), new Map([['SKILL.md', 'b']]))
+    await assert.rejects(
+      () => installSkill(market, 'skillhub:demo-skill', 'user', home, home, '0.3.0'),
+      /unsafe path/,
+    )
+    const exists = await readdir(join(home, 'skills')).then(() => true, () => false)
+    assert.equal(exists, false)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+await check('project installs land under the project .dsh/skills', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'skills-hub-m3-p-'))
+  try {
+    await mkdir(join(project, '.git'), { recursive: true })
+    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md']), new Map([['SKILL.md', 'body']]))
+    const result = await installSkill(market, 'skillhub:demo-skill', 'project', project, project, '0.3.0')
+    assert.equal(result.root, 'project')
+    assert.match(result.path, /\.dsh[\\/]skills[\\/]demo-skill[\\/]SKILL\.md$/)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
 console.log(`\n${passed} checks passed${failures.length > 0 ? `, ${failures.length} failed` : ''}`)

@@ -178,14 +178,23 @@ check('market markdown labels stay referentially stable', () => {
   if (!/useMemo\(/.test(marketSource)) throw new Error('market labels are rebuilt every render')
 })
 
-check('the market offers no install action before the installer exists', () => {
-  // The next milestone adds installation; until its route exists, the tab must
-  // not render a control that can only fail. The pattern is deliberately
-  // narrow: an install-count badge (`marketInstalls`, a registry statistic)
-  // is legitimate and must not trip it, so only an install *action* matches —
-  // a button or a handler named install.
-  if (/onInstall|installSkill|action\.install|'market\.install\b|安装到/.test(marketSource)) {
-    throw new Error('the market tab offers an install action before M3 exists')
+check('market install goes through an official Modal confirmation first', () => {
+  // M3: the install action exists, but it must never be a one-click copy.
+  // The confirm step is where the licence warning is read, so it lives in an
+  // official Modal opened from the detail dialog.
+  if (!/market\.confirmTitle/.test(marketSource) || !/market\.confirmInstall/.test(marketSource)) {
+    throw new Error('install has no confirmation step')
+  }
+  // The install button opens the confirmation, not the request. The button is
+  // located by its install label and its onClick must set `confirming` — the
+  // negative control (wiring the button straight to doInstall) must fail here.
+  const labelIndex = marketSource.indexOf("tt('market.install')")
+  if (labelIndex < 0) throw new Error('the install action label is missing')
+  const blockStart = marketSource.lastIndexOf('<Button', labelIndex)
+  const blockEnd = marketSource.indexOf('</Button>', labelIndex)
+  const block = marketSource.slice(blockStart, blockEnd)
+  if (!/onClick=\{[^}]*setConfirming\(true\)/.test(block)) {
+    throw new Error('the install button does not open the confirmation Modal')
   }
 })
 

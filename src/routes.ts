@@ -51,6 +51,7 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { isSkillsHubAllowed } from './access.ts'
 import { Market } from './market/registry.ts'
 import { MarketFetchError } from './market/fetch.ts'
+import { installSkill, listInstalled } from './market/installer.ts'
 import {
   buildPayload,
   collectSkills,
@@ -70,6 +71,11 @@ import {
 import { parseFrontmatter, setFrontmatterField, stripFrontmatter } from './core/frontmatter.ts'
 import { providerSkillIdentity, readProviderToggles, setProviderSkillEnabled, type ProviderSkillIdentity } from './core/provider-toggles.ts'
 import { readJsonBody, writeJson } from './http.ts'
+
+/** Build-time constant: the package version, injected by tsdown's define. */
+declare const __DSH_PKG_VERSION__: string
+/** The version recorded in a provenance record. */
+const PLUGIN_VERSION: string = typeof __DSH_PKG_VERSION__ === 'string' ? __DSH_PKG_VERSION__ : ''
 
 /** Route paths (the client bundle mirrors these literals; tests assert both sides). */
 export const ROUTES = {
@@ -97,6 +103,10 @@ export const ROUTES = {
   marketListRepo: '/api/skills-hub/market/list-repo',
   /** Which market sources exist and whether they answered. */
   marketSources: '/api/skills-hub/market/sources',
+  /** Install one market skill into the user or project skill root. */
+  marketInstall: '/api/skills-hub/market/install',
+  /** Skills this panel installed, with their provenance records. */
+  marketInstalled: '/api/skills-hub/market/installed',
   /** Liveness and capability probe. */
   health: '/api/skills-hub/health',
 } as const
@@ -732,6 +742,60 @@ export function makeRoutes(ctx: Context, deps: SkillsHubRouteDeps): WebRoute[] {
         writeJson(res, 200, {
           sources: market.listSources().map(source => ({ name: source.name, searchable: source.searchable, pageable: source.pageable })),
         }, { 'cache-control': 'no-store' })
+      },
+    },
+    {
+      kind: 'exact',
+      path: ROUTES.marketInstall,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (!guard(req, res, 'POST')) return
+        try {
+          const body = await readJsonBody(req, { maxBytes: 8 * 1024, objectOnly: true })
+          if (body === null) {
+            writeJson(res, 400, { error: 'invalid JSON body' })
+            return
+          }
+          const payload = body as Record<string, unknown>
+          const { id, root, cwd } = payload
+          if (typeof id !== 'string' || id.trim() === '') {
+            writeJson(res, 400, { error: 'expected { id, root, cwd }' })
+            return
+          }
+          if (root !== 'user' && root !== 'project') {
+            writeJson(res, 400, { error: 'root must be user (~/.dsh/skills) or project (project .dsh/skills)' })
+            return
+          }
+          if (typeof cwd !== 'string' || cwd.trim() === '') {
+            writeJson(res, 400, { error: 'cwd is required (the workspace shown by the panel)' })
+            return
+          }
+          // The install target is derived from the workspace the panel is
+          // showing, exactly as the create route does — never from a
+          // client-supplied directory.
+          const result = await installSkill(market, id, root, findProjectRoot(cwd), dshHome, PLUGIN_VERSION, reqSignal(req))
+          writeJson(res, 200, { ok: true, ...result }, { 'cache-control': 'no-store' })
+        } catch (error) {
+          if (error instanceof Error && /already exists|not a valid skill name|unsafe path|over the|not offered by any market source|exceeds/.test(error.message)) {
+            writeJson(res, error.message.includes('already exists') ? 409 : 400, { error: error.message })
+            return
+          }
+          marketFail(res, error)
+        }
+      },
+    },
+    {
+      kind: 'exact',
+      path: ROUTES.marketInstalled,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (!guard(req, res, 'GET')) return
+        try {
+          const url = new URL(req.url ?? '/', 'http://x')
+          const cwd = panelCwd(queryParam(url, 'cwd'))
+          const installed = await listInstalled(dshHome, findProjectRoot(cwd))
+          writeJson(res, 200, { installed }, { 'cache-control': 'no-store' })
+        } catch (error) {
+          fail(res, error)
+        }
       },
     },
     {

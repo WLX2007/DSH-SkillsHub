@@ -47,6 +47,17 @@ Type a query and press Enter. The source picker to the left of the search field 
 
 Long result lists load the next page automatically as you scroll, with an explicit "load more" button as the keyboard/click target. Selecting a skill's name opens a detail dialog rendered by the shell's own markdown renderer — the skill reads exactly as it does in a conversation — alongside its file list and total size.
 
+### Installing from the market
+
+The detail dialog carries the install action. A skill is installed **after** its body has been read, so the licence line and the file list sit on the same screen as the button. Installing asks twice: the target root (user `~/.dsh/skills`, shared by every project, or the current project's `.dsh/skills`), then a confirmation that states the licence situation at the moment of decision.
+
+The install itself is engineered to fail cleanly:
+
+- **Staged then renamed.** Files land in a staging directory beside the target and the directory is renamed into place only when every file arrived. A failed or cancelled install leaves the previous state of the disk untouched — no half-written skill the model could later load.
+- **Collision is an error.** An existing skill with the same name is never silently replaced (the panel answers 409; updating an installed skill is M4's job).
+- **Bounded.** Per-file 2 MB, 16 MB total, 200 files, and every manifest path is validated against a strict relative-path grammar before anything is written.
+- **Provenance travels with the skill.** A `.skills-hub.json` record inside the installed directory names the market id, the source, the licence at install time and the timestamp — the anchor M4's update checks read back.
+
 **Licences are stated, never laundered.** Every result row declares its licence: declared ones show it (MIT, GPL-3.0, …); undeclared ones show *No licence declared*. In a sampled catalogue more than half of the entries declare none, and that is a fact a user needs before deciding to copy a skill to disk.
 
 ### My Skills tab
@@ -75,6 +86,7 @@ Plugin config (profile patch):
 - **The browser never sends a URL.** Market requests carry only the opaque skill id the host issued; repositories, refs, directories and file paths are re-derived host-side, and the id grammar is validated segment by segment, so a path traversal is rejected before it can reach any fetch.
 - **Remote fetching happens only in the host half**, behind the trust fence. The unauthenticated GitHub API allows 60 requests/hour, so only discovery (tree listing) touches it, cached for 30 minutes; file bodies come from `raw.githubusercontent.com` through an accelerator chain, which does not count against that budget. skillhub.cn is reached directly.
 - **Registry icons are proxied, not linked.** Icon URLs are fetched host-side under an explicit policy (https only, allow-listed host, image content-type, 256 KB cap) and re-served as data URLs, so the browser never loads a third-party origin: no referrer leak, no tracking pixel per render.
+- **Installs re-derive everything from the id.** The install route receives only the opaque skill id and the workspace the panel is showing; the file list comes from the skill's own detail manifest (never client-supplied), the target directory is derived host-side, and every manifest path is validated before it is joined onto the staging root. An install can therefore only write a skill directory under a skill root.
 - Writes are bounded (64 KB bodies), symlinks refuse delete/update (both would escape their skill root), and deletes move files into `.trash` rather than removing them.
 
 ## Architecture
@@ -100,10 +112,10 @@ Test suites (run with `node tests/<file>.mjs`):
 | --- | --- |
 | `m0-smoke.mjs` | Loads both bundles the way the host does; asserts the loader contract, injected-require usage and route registration. |
 | `m1-host.mjs` | Drives the route family against a real temporary skill tree: scan grading, write-route identity checks, symlink protection, fence denials. |
-| `market.mjs` | Market layer with fake transports, zero network: aggregation, dedup, id grammar (incl. path-escape attempts), source contracts. |
+| `market.mjs` | Market layer with fake transports, zero network: aggregation, dedup, id grammar (incl. path-escape attempts), source contracts, installer staging/path-safety/provenance. |
 | `ui-structure.mjs` | UI guards: official-primitives-only, card anatomy, scroll height chain — each negative-controlled. |
 | `theme-tokens.mjs` | Verifies every referenced CSS custom property exists in the shipped theme, because an undefined token makes `var()` silently drop the whole declaration. |
-| `market-live*.mjs`, `icon-live.mjs`, `tools/scroll-selftest.mjs` | Manual, live-network / real-browser smoke tests; not part of the automated gate. |
+| `market-live*.mjs`, `icon-live.mjs`, `install-live.mjs`, `tools/scroll-selftest.mjs` | Manual, live-network / real-browser smoke tests; not part of the automated gate. |
 
 ## Project layout
 
@@ -130,7 +142,7 @@ docs/                     design documents (Chinese)
 | M0 | Plugin skeleton, sidebar entry, build pipeline | ✅ Shipped |
 | M1 | Local management: browse / enable / edit / create / delete / preview | ✅ Shipped |
 | M2 | Market: multi-source search, detail preview, paging, icons | ✅ Shipped |
-| M3 | Installation engine: validation, size caps, atomic writes, provenance | Planned |
+| M3 | Installation engine: validation, size caps, atomic writes, provenance | ✅ Shipped |
 | M4 | Lifecycle: provenance store, update checks, local-modification detection | Planned |
 | M5 | Custom registry manifests, offline import, accelerator settings UI | Planned |
 

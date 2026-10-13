@@ -189,6 +189,29 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The install row inside the detail dialog: root choice beside the action. */
+.installRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  flex-wrap: wrap;
+}
+
+.installRow .feedback {
+  margin: 0;
+}
+
+/* The licence line inside the confirm dialog — the fact being agreed to. */
+.confirmLicence {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* The tail of the results: the loading shimmer, the "load more" control, or
    the end-of-list line — one of the three, always, so the list never ends in
    an unexplained silence. */

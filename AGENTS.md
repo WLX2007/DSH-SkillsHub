@@ -125,8 +125,16 @@ nightly 通道下 tag 与已装版本可能不同，要核验再照抄。
   `licenceOf` 读 SKILL.md frontmatter 的 `license` 字段（自己的行匹配，别往
   `parseFrontmatter` 里加字段——那是本地面板要改写的字段的契约）；声明了就显示，
   没声明就显示"未声明许可证"，**不要**把缺失默认成某个许可。
-- 安装（M3）是把文件复制到磁盘的动作，义务提示在那时给用户；搜索与展示本身
-  是平台明示许可的行为。
+- 安装（M3，已交付）是把文件复制到磁盘的动作，义务提示在那时给用户；搜索与展示本身
+  是平台明示许可的行为。安装引擎的硬约定（`src/market/installer.ts`）：
+  - 文件清单只来自技能自己的 detail manifest，客户端不能点名文件；
+  - 每个清单路径先过 `isSafeRelPath`（拒绝 `..`、反斜杠、绝对路径）再拼接；
+  - **先暂存后改名**（`<root>/.staging-<name>-<ts>/` → rename），失败时清掉暂存目录，
+    磁盘不留半个技能；限额：单文件 2 MB / 总量 16 MB / 200 文件；
+  - **同名即 409**，绝不静默覆盖（更新是 M4 的事）；
+  - provenance（`.skills-hub.json`）写在技能目录内，M4 的更新检查从它读回；
+  - 安装按钮必须经过确认弹窗（官方 Modal）才发起请求——`tests/ui-structure.mjs`
+    锁定这一点，负向控制已验证。
 - **tsdown 多入口**：market 模块从 `lib/market.js`（伴生入口）导出，因为从 index.ts
   重导出会被折叠（详见 tsdown.config.ts 注释）。测试从 `lib/market.js` 导入 `Market`。
 

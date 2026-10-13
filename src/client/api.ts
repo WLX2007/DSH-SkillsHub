@@ -26,6 +26,8 @@ const API = {
   marketDetail: 'api/skills-hub/market/detail',
   marketListRepo: 'api/skills-hub/market/list-repo',
   marketSources: 'api/skills-hub/market/sources',
+  marketInstall: 'api/skills-hub/market/install',
+  marketInstalled: 'api/skills-hub/market/installed',
 } as const
 
 /**
@@ -209,9 +211,23 @@ export interface MarketDetail {
   totalBytes: number
 }
 
+/** One installed market skill (with its provenance record, when present). */
+export interface InstalledRecord {
+  name: string
+  root: 'user' | 'project'
+  path: string
+  provenance?: {
+    id: string
+    provider: string
+    sourceLabel: string
+    licence: MarketLicence
+    installedAt: string
+    installedBy: string
+  }
+}
+
 /** One market search outcome. */
-export interface MarketSearchPayload {
-  query: string
+export interface MarketSearchPayload {  query: string
   limit: number
   /** The one-based page this answer carries. */
   page: number
@@ -335,6 +351,25 @@ export class SkillsHubApi {
   /** Which market sources exist. */
   async marketSources(): Promise<{ sources: MarketSourceInfo[] }> {
     return this.request(API.marketSources)
+  }
+
+  /**
+   * Install one market skill.
+   * @param id - the opaque skill id the panel is showing.
+   * @param root - 'user' (~/.dsh/skills) or 'project' (the workspace root).
+   * @param cwd - the workspace the panel is showing; resolves the project root.
+   * @returns what was installed and where.
+   */
+  async marketInstall(id: string, root: 'user' | 'project', cwd: string): Promise<{ ok: true; name: string; path: string; root: 'user' | 'project'; files: number; licence: MarketLicence }> {
+    return this.request(API.marketInstall, { method: 'POST', body: { id, root, cwd } })
+  }
+
+  /** Skills this panel installed, with their provenance records. */
+  async marketInstalled(cwd?: string): Promise<{ installed: InstalledRecord[] }> {
+    const url = typeof cwd === 'string' && cwd.trim() !== ''
+      ? `${API.marketInstalled}?cwd=${encodeURIComponent(cwd)}`
+      : API.marketInstalled
+    return this.request(url)
   }
 
   private async request<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
