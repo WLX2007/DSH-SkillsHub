@@ -1,6 +1,6 @@
 {
   "name": "@wulongxi/dsh-skills-hub",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness skill center: browse and search online skill registries, install skills into user/project roots, and manage or create local skills in a native web GUI panel.",
   "type": "module",
   "icon": "icon.svg",
