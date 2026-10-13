@@ -25,13 +25,10 @@
 
 /* --- page frame ---------------------------------------------------------- */
 
-/* The page is a flex column pinned to the viewport height, exactly like the
-   Plugin manager page: header, tabs and content in one centred column.
-   The page itself does NOT scroll — .content does, below — because a
-   height:100% child of the shell's flex column gets stretched by its content
-   (min-height:auto), overflows a clipped ancestor, and then nothing can
-   scroll at all. Keeping the scroll surface here, where the height is
-   definite, is what makes every tab reliably scrollable. */
+/* The page fills the center column the shell gives it. The column is a
+   grid row of minmax(0,1fr) whose own overflow is hidden (extracted from
+   the shell's layout bundle), so the height arriving here is definite and
+   the scroll surface must be an inner element, not this one. */
 .page {
   display: flex;
   flex-direction: column;
@@ -39,6 +36,7 @@
   gap: 32px;
   box-sizing: border-box;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
   padding: 0 clamp(24px, 4vw, 48px) 48px;
   color: var(--dsw-alias-label-primary);
@@ -100,13 +98,16 @@
 /* The scroll surface: everything below the tab row. flex:1 + min-height:0 is
    what lets it shrink to the space the header leaves and own the overflow;
    without min-height:0 a flex child refuses to shrink below its content and
-   pushes the page taller than the viewport instead of scrolling. */
+   pushes the page taller than the viewport instead of scrolling. Overflow is
+   hidden on the x axis because the cards hang 8px past their container on
+   both sides (their hover surface), which must not become a scrollbar. */
 .content {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 24px;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   /* Room for the focus ring of the last card not to clip. */
@@ -128,6 +129,9 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  /* A scroll-container child must be allowed to shrink, or it pushes the
+     content past the scroll surface instead of scrolling inside it. */
+  min-height: 0;
 }
 
 /* Which registries exist: one quiet line of source tags under the search. */

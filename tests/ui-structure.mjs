@@ -62,6 +62,16 @@ function stripComments(source) {
 }
 
 const css = readFileSync(CSS_PATH, 'utf8')
+
+/**
+ * The body of one top-level CSS rule, e.g. `cssBlock('.page')`.
+ * @param selector - the class selector including its dot.
+ * @returns the declaration block, or '' when the rule is absent.
+ */
+function cssBlock(selector) {
+  const match = new RegExp(`${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`).exec(css)
+  return match?.[1] ?? ''
+}
 const tabSource = stripComments(read('SkillsTab.tsx'))
 const panelSource = stripComments(read('SkillsHubPanel.tsx'))
 
@@ -175,6 +185,39 @@ check('the market offers no install action before the installer exists', () => {
   // a button or a handler named install.
   if (/onInstall|installSkill|action\.install|'market\.install\b|安装到/.test(marketSource)) {
     throw new Error('the market tab offers an install action before M3 exists')
+  }
+})
+
+console.log('\nthe scroll height chain stays intact')
+
+// The shell's center column is `overflow:hidden` on a minmax(0,1fr) grid row
+// (extracted from the installed layout bundle), so the height arriving at the
+// panel is definite and exactly one inner element may own the scrolling.
+// Shipping this wrong shows up as a list that cannot scroll at all, which is
+// how the market tab shipped once, so the chain is pinned rule by rule.
+check('.page is a clipped flex column, not the scroll surface', () => {
+  const page = cssBlock('.page')
+  if (!/height:\s*100%/.test(page)) throw new Error('.page must fill the column height')
+  if (!/overflow:\s*hidden/.test(page)) throw new Error('.page must not scroll itself; the clip belongs to the shell')
+  if (!/min-height:\s*0/.test(page)) throw new Error('.page must be allowed to shrink to the column height')
+})
+
+check('.content is the scroll surface with a definite height', () => {
+  const content = cssBlock('.content')
+  if (!/flex:\s*1/.test(content)) throw new Error('.content must take the space the header leaves')
+  if (!/min-height:\s*0/.test(content)) {
+    throw new Error('.content without min-height:0 refuses to shrink and pushes the page taller instead of scrolling')
+  }
+  if (!/overflow-y:\s*auto/.test(content)) throw new Error('.content must own the vertical scroll')
+  // The cards hang 8px past their container for the hover surface; without
+  // this the overflow becomes a horizontal scrollbar (shipped once).
+  if (!/overflow-x:\s*hidden/.test(content)) throw new Error('.content must clip horizontal overflow')
+})
+
+check('a scroll-container child is allowed to shrink', () => {
+  const market = cssBlock('.market')
+  if (!/min-height:\s*0/.test(market)) {
+    throw new Error('.market without min-height:0 stretches past .content and the list cannot scroll')
   }
 })
 
