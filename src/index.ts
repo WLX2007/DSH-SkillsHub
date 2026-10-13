@@ -156,11 +156,27 @@ function applyImpl(ctx: Context, config?: Config): void {
      * a no-op when either service is absent: the chokidar watcher on the skill
      * roots remains the fallback (it watches the filesystem itself, not the
      * tools), so the bridge is an accelerator, not a correctness dependency.
+     *
+     * PRIMARY channel — `skills.invalidateCache()`: the SkillRegistry service
+     * exposes it publicly (it is what every provider's `control.invalidate`
+     * resolves to), and it does exactly what the event chain hopes to achieve:
+     * bump the revision, drop the whole collect cache, and dispatch
+     * `skills/change`. Called directly it cannot miss — no event routing, no
+     * actor whitelist, no watcher. The `fs/observed` emission stays as the
+     * secondary channel so first-party observers other than the registry
+     * still hear about the mutation.
      */
     announceMutation: async (path: string): Promise<void> => {
       try {
+        // Primary: invalidate the skill registry itself.
+        const skills = services.skills as { invalidateCache?(): void } | undefined
+        if (typeof skills?.invalidateCache === 'function') {
+          skills.invalidateCache()
+        } else {
+          ctx.logger.warn('skills-hub: skill registry exposes no invalidateCache(); installed skill may not appear until the next watcher pass')
+        }
+        // Secondary: the first-party mutation event the model's write tools emit.
         const target = await services.fs?.resolve(path)
-        if (target === undefined) return
         services.emit?.('fs/observed', target, { kind: 'present', version: `${Date.now()}` }, { name: 'write' })
       } catch (error) {
         ctx.logger.warn(error)
