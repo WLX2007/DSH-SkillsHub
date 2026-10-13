@@ -197,6 +197,21 @@
   gap: 12px;
 }
 
+/* The skipped-files warning after a partial install: the skill is usable but
+   named files are missing, and the user must see which. */
+.installSkipped {
+  margin-top: 8px;
+}
+
+.installSkipped ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* The licence line inside the confirm dialog — the fact being agreed to. */
 .confirmLicence {
   margin: 0;

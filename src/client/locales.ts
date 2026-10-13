@@ -70,6 +70,7 @@ export const zh = {
   'market.confirmLicenceUndeclared': '该技能未声明许可证。复制前请自行确认授权。',
   'market.installedAt': '已安装到 {path}',
   'market.installFailed': '安装失败：{error}',
+  'market.skippedWarning': '{count} 个文件未能下载（注册站拒绝提供或超出大小上限），技能已安装但缺少这些文件：',
 
   // --- Skills list ---
   'list.loading': '正在加载…',
@@ -227,6 +228,7 @@ export const en: Record<SkillsHubKey, string> = {
   'market.confirmLicenceUndeclared': 'This skill declares no licence. Confirm the terms yourself before copying.',
   'market.installedAt': 'Installed at {path}',
   'market.installFailed': 'Install failed: {error}',
+  'market.skippedWarning': '{count} files could not be downloaded (the registry refused them or they exceed its size limit); the skill installed without them:',
 
   'list.loading': 'Loading…',
   'list.loadFailed': 'Failed to load: {error}',

@@ -469,6 +469,7 @@ await check('detail of a foreign-origin row is refused', async () => {
 console.log('\ninstaller: staged writes, path safety and provenance')
 
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { installSkill, installName, isSafeRelPath } from '../lib/market.js'
@@ -539,12 +540,12 @@ await check('install stages then renames, leaving provenance and no residue', as
   }
 })
 
-await check('a failed download leaves no residue and no target directory', async () => {
+await check('a failed SKILL.md download aborts the install and leaves no residue', async () => {
   const home = await mkdtemp(join(tmpdir(), 'skills-hub-m3-'))
   try {
-    const files = new Map([['SKILL.md', 'body']])
-    files.set('scripts/run.py', undefined) // readFile will throw for this one
-    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md', 'scripts/run.py']), files)
+    const files = new Map()
+    files.set('SKILL.md', undefined) // readFile will throw for SKILL.md itself
+    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md']), files)
     await assert.rejects(
       () => installSkill(market, 'skillhub:demo-skill', 'user', home, home, '0.3.0'),
       /no canned body/,
@@ -553,6 +554,25 @@ await check('a failed download leaves no residue and no target directory', async
     // no `demo-skill` directory exists anywhere under the root.
     const leftovers = await readdir(join(home, 'skills'))
     assert.deepEqual(leftovers, [], 'a failed install must leave no directory behind')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+await check('a failed non-SKILL.md download is skipped and reported, not fatal', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'skills-hub-m3-'))
+  try {
+    const files = new Map([['SKILL.md', 'body']])
+    files.set('vendor/lib.js', undefined) // the registry refuses this one
+    const market = fakeMarket(detailFor('demo-skill', ['SKILL.md', 'vendor/lib.js']), files)
+    const result = await installSkill(market, 'skillhub:demo-skill', 'user', home, home, '0.3.0')
+    assert.equal(result.name, 'demo-skill')
+    assert.equal(result.files, 2, 'the manifest count is reported as-is')
+    assert.equal(result.skipped?.length, 1, 'the refused file is reported as skipped')
+    assert.equal(result.skipped?.[0]?.path, 'vendor/lib.js')
+    // The skill IS on disk with its SKILL.md; the refused file is absent.
+    assert.ok(existsSync(join(home, 'skills', 'demo-skill', 'SKILL.md')))
+    assert.equal(existsSync(join(home, 'skills', 'demo-skill', 'vendor', 'lib.js')), false)
   } finally {
     await rm(home, { recursive: true, force: true })
   }

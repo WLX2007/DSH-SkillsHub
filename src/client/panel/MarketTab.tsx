@@ -559,6 +559,7 @@ function InstallDialog({ api, id, onClose, onInstalled }: {
   const [confirming, setConfirming] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [installedPath, setInstalledPath] = useState<string | undefined>(undefined)
+  const [skippedFiles, setSkippedFiles] = useState<Array<{ path: string; reason: string }>>([])
   const [installError, setInstallError] = useState<string | undefined>(undefined)
   const [cwd, setCwd] = useState<string | undefined>(undefined)
 
@@ -583,6 +584,7 @@ function InstallDialog({ api, id, onClose, onInstalled }: {
       setCwd(workspace)
       const result = await api.marketInstall(id, installRoot, workspace)
       setInstalledPath(result.path)
+      setSkippedFiles(result.skipped ?? [])
       onInstalled()
     } catch (err) {
       setInstallError(err instanceof Error ? err.message : String(err))
@@ -615,9 +617,24 @@ function InstallDialog({ api, id, onClose, onInstalled }: {
       )}
     >
       {installedPath !== undefined ? (
-        <p className={css.feedback} data-kind="ok" data-dsh-part="install-done">
-          {tt('market.installedAt', { path: installedPath })}
-        </p>
+        <div data-dsh-part="install-done">
+          <p className={css.feedback} data-kind="ok">
+            {tt('market.installedAt', { path: installedPath })}
+          </p>
+          {skippedFiles.length > 0 && (
+            <div className={css.installSkipped} data-dsh-part="install-skipped">
+              <p className={css.confirmLicence}>{tt('market.skippedWarning', { count: String(skippedFiles.length) })}</p>
+              <ul>
+                {skippedFiles.map(file => (
+                  <li key={file.path}>
+                    <code className={css.previewCode}>{file.path}</code>
+                    <span className={css.marketMore}> — {file.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       ) : (
         <div className={css.installPanel} data-dsh-part="market-install">
           <p className={css.hint}>{tt('market.installHint')}</p>

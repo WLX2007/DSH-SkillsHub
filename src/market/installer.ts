@@ -74,6 +74,13 @@ export interface InstallResult {
   files: number
   /** The licence the skill declares, reported verbatim. */
   licence: MarketLicence
+  /**
+   * Manifest files the registry refused to serve (its own 4xx/5xx) or that
+   * arrived over the per-file cap, with the reason each was skipped. The
+   * skill installed WITHOUT these; SKILL.md is never among them, because
+   * without it there is no install at all. Present only when non-empty.
+   */
+  skipped?: Array<{ path: string; reason: string }>
 }
 
 /** A relative path that stays inside the skill directory. */
@@ -182,13 +189,28 @@ export async function installSkill(
   const stagingDir = join(baseDir, `.staging-${name}-${Date.now()}`)
   await mkdir(stagingDir, { recursive: true })
   let licence: MarketLicence = { state: 'undeclared' }
+  /** Manifest paths that could not be fetched, with the reason. */
+  const skipped: Array<{ path: string; reason: string }> = []
   try {
     for (const file of detail.files) {
       signal?.throwIfAborted()
-      const body = await market.readFile(id, file.path, signal)
+      let body: string
+      try {
+        body = await market.readFile(id, file.path, signal)
+      } catch (error) {
+        // A file the REGISTRY refuses to serve again (its own 413/404/500) is
+        // permanent for this attempt — but the skill may still be usable
+        // without a bundled vendor asset. SKILL.md is the exception: without
+        // it nothing installable exists, so it propagates and aborts.
+        if (file.path === 'SKILL.md') throw error
+        skipped.push({ path: file.path, reason: error instanceof Error ? error.message : String(error) })
+        continue
+      }
       const bytes = Buffer.byteLength(body, 'utf8')
       if (bytes > FILE_MAX_BYTES) {
-        throw new Error(`skill ${name} file ${file.path} arrived at ${bytes} bytes, over the cap`)
+        if (file.path === 'SKILL.md') throw new Error(`skill ${name} file ${file.path} arrived at ${bytes} bytes, over the cap`)
+        skipped.push({ path: file.path, reason: `arrived at ${bytes} bytes, over the ${FILE_MAX_BYTES} byte cap` })
+        continue
       }
       const target = join(stagingDir, file.path)
       if (!target.startsWith(stagingDir)) {
@@ -214,7 +236,7 @@ export async function installSkill(
     licence = provenance.licence
     await writeFile(join(stagingDir, '.skills-hub.json'), JSON.stringify(provenance, null, 2), 'utf8')
 
-    await rename(stagingDir, targetDir)
+    await renameWithRetry(stagingDir, targetDir)
   } catch (error) {
     // Any failure — network, cap, abort — leaves nothing behind: the target
     // never existed, and the staging directory is the only residue possible.
@@ -227,7 +249,34 @@ export async function installSkill(
     path: join(targetDir, 'SKILL.md'),
     root,
     files: detail.files.length,
+    /** The files the registry refused to serve; the skill installed without them. */
+    ...(skipped.length > 0 ? { skipped } : {}),
     licence,
+  }
+}
+
+/**
+ * Rename a directory into place, retrying the Windows lock window.
+ *
+ * On Windows a freshly written file can stay briefly locked by antivirus
+ * indexing or the filesystem itself (EPERM on rename); the condition clears
+ * in milliseconds, so a short backoff — not an error — is the right answer.
+ * Retries only EPERM/EACCES/EBUSY: anything else is a real failure.
+ *
+ * @param from - the staging directory.
+ * @param to - the target directory.
+ */
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  const delays = [50, 150, 400, 800]
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code
+      if (attempt >= delays.length || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) throw error
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+    }
   }
 }
 

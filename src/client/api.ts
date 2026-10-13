@@ -358,9 +358,10 @@ export class SkillsHubApi {
    * @param id - the opaque skill id the panel is showing.
    * @param root - 'user' (~/.dsh/skills) or 'project' (the workspace root).
    * @param cwd - the workspace the panel is showing; resolves the project root.
-   * @returns what was installed and where.
+   * @returns what was installed and where; `skipped` lists the manifest files
+   *   the registry refused to serve (the skill installed without them).
    */
-  async marketInstall(id: string, root: 'user' | 'project', cwd: string): Promise<{ ok: true; name: string; path: string; root: 'user' | 'project'; files: number; licence: MarketLicence }> {
+  async marketInstall(id: string, root: 'user' | 'project', cwd: string): Promise<{ ok: true; name: string; path: string; root: 'user' | 'project'; files: number; licence: MarketLicence; skipped?: Array<{ path: string; reason: string }> }> {
     return this.request(API.marketInstall, { method: 'POST', body: { id, root, cwd } })
   }
 
