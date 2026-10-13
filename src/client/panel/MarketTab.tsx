@@ -648,7 +648,7 @@ function InstallDialog({ api, id, onClose, onInstalled }: {
             root: installRoot === 'user' ? tt('market.installRoot.user') : tt('market.installRoot.project'),
           })}
           closeLabel={tt('common.cancel')}
-          className={css.previewDialog}
+          className={css.confirmDialog}
           footer={(
             <div className={css.formActions}>
               <Button variant="outline" size="md" onClick={() => { setConfirming(false) }}>{tt('common.cancel')}</Button>

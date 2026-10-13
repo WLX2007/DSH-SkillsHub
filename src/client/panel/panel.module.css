@@ -205,6 +205,13 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* A confirmation stacked over another dialog reads as a second layer only
+   when it is narrower than the dialog beneath it; at equal width the two
+   blur into one confusing surface. Compact width, no scrolling content. */
+.confirmDialog {
+  width: min(420px, 100%);
+}
+
 /* The tail of the results: the loading shimmer, the "load more" control, or
    the end-of-list line — one of the three, always, so the list never ends in
    an unexplained silence. */
