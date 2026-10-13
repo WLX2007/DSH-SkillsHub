@@ -180,21 +180,31 @@ check('market markdown labels stay referentially stable', () => {
 
 check('market install goes through an official Modal confirmation first', () => {
   // M3: the install action exists, but it must never be a one-click copy.
-  // The confirm step is where the licence warning is read, so it lives in an
-  // official Modal opened from the detail dialog.
+  // Both entry points — a result row and the detail dialog — open the SAME
+  // shared install panel (InstallDialog), whose own action opens an official
+  // Modal confirmation. That confirm step is where the licence warning is
+  // restated at the moment of decision.
   if (!/market\.confirmTitle/.test(marketSource) || !/market\.confirmInstall/.test(marketSource)) {
     throw new Error('install has no confirmation step')
   }
-  // The install button opens the confirmation, not the request. The button is
-  // located by its install label and its onClick must set `confirming` — the
-  // negative control (wiring the button straight to doInstall) must fail here.
-  const labelIndex = marketSource.indexOf("tt('market.install')")
-  if (labelIndex < 0) throw new Error('the install action label is missing')
-  const blockStart = marketSource.lastIndexOf('<Button', labelIndex)
-  const blockEnd = marketSource.indexOf('</Button>', labelIndex)
-  const block = marketSource.slice(blockStart, blockEnd)
+  const dialogStart = marketSource.indexOf('function InstallDialog')
+  if (dialogStart < 0) throw new Error('the shared install panel is missing')
+  const panel = marketSource.slice(dialogStart)
+  // The panel's install button opens the confirmation, not the request. It is
+  // located by its installing/install label; the negative control (wiring it
+  // straight to doInstall) must fail here.
+  const buttonIndex = panel.indexOf('{installing ? tt(\'market.installing\') : tt(\'market.install\')}')
+  if (buttonIndex < 0) throw new Error('the install action button is missing from the panel')
+  const blockStart = panel.lastIndexOf('<Button', buttonIndex)
+  const blockEnd = panel.indexOf('</Button>', buttonIndex)
+  const block = panel.slice(blockStart, blockEnd)
   if (!/onClick=\{[^}]*setConfirming\(true\)/.test(block)) {
     throw new Error('the install button does not open the confirmation Modal')
+  }
+  // The row offers the entry point and hands only the id — the request fires
+  // from inside the panel, never from the row or the detail dialog.
+  if (!/onInstall=\{\(\) => \{ setInstallId\(skill\.id\) \}\}/.test(marketSource)) {
+    throw new Error('the result row install button does not open the shared panel')
   }
 })
 

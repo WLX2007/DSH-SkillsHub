@@ -189,20 +189,12 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The install row inside the detail dialog's footer: root choice beside the
-   action, always visible — the scrolling body never buries the primary
-   action of the dialog. It stacks under the provider tag inside .previewMeta,
-   which becomes a column when it carries an install row. */
-.installRow {
+/* The shared install panel: a one-field form (target root) with room for the
+   failure line, opened from a result row or the detail dialog. */
+.installPanel {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-
-.installRow .feedback {
-  margin: 0;
 }
 
 /* The licence line inside the confirm dialog — the fact being agreed to. */
@@ -613,17 +605,15 @@
   width: 100%;
 }
 
-/* Where the previewed text came from — and, for a market skill, where the
-   install controls ride. Column so the install row stacks under the tags. */
+/* Where the previewed text came from: the file, or the skill registry. */
 .previewMeta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.previewMeta > .previewMetaLine {
+.previewMetaLine {
   display: flex;
   align-items: center;
   gap: 8px;

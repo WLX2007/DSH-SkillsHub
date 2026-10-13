@@ -30,7 +30,6 @@ import {
   PathLabel,
   Pill,
   SegmentedControl,
-  Switch,
   Tag,
   TextShimmer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -106,6 +105,11 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
   // search does not silently rewrite the results already on screen.
   const [selectedSource, setSelectedSource] = useState<string>('all')
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
+  // The skill the shared install panel is open for — reachable from a result
+  // row's install button or from the detail dialog, one flow either way.
+  const [installId, setInstallId] = useState<string | undefined>(undefined)
+  // Bumped after a successful install so a fresh search reflects the new state.
+  const [installTick, setInstallTick] = useState(0)
   // Sequence guard: a slow earlier search must not overwrite a newer one.
   const searchSeq = useRef(0)
   const labels = useMemo(() => markdownLabels(), [])
@@ -250,7 +254,12 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
           : (
             <ul className={css.cards} data-dsh-part="market-results">
               {results.map(skill => (
-                <MarketRow key={skill.id} skill={skill} onOpen={() => { setDetailId(skill.id) }} />
+                <MarketRow
+                  key={skill.id}
+                  skill={skill}
+                  onOpen={() => { setDetailId(skill.id) }}
+                  onInstall={() => { setInstallId(skill.id) }}
+                />
               ))}
             </ul>
           )
@@ -293,7 +302,15 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
           id={detailId}
           labels={labels}
           onClose={() => { setDetailId(undefined) }}
+          onInstall={() => { setInstallId(detailId) }}
         />
+      )}
+      {installId !== undefined && (
+        <InstallDialog
+          api={api}
+          id={installId}
+          onClose={() => { setInstallId(undefined) }}
+          onInstalled={() => { setInstallTick(tick => tick + 1) }}        />
       )}
     </div>
   )
@@ -340,7 +357,7 @@ function RowIcon({ icon }: { icon: string | undefined }): React.JSX.Element {
 }
 
 /** One result row: the shipped card anatomy, opening the detail on its name. */
-function MarketRow({ skill, onOpen }: { skill: MarketSkill; onOpen: () => void }): React.JSX.Element {
+function MarketRow({ skill, onOpen, onInstall }: { skill: MarketSkill; onOpen: () => void; onInstall: () => void }): React.JSX.Element {
   return (
     <li className={css.card} data-dsh-part="market-row" data-skill={skill.name}>
       <div className={css.cardHead}>
@@ -378,6 +395,9 @@ function MarketRow({ skill, onOpen }: { skill: MarketSkill; onOpen: () => void }
           <Button size="sm" variant="ghost" onClick={onOpen}>
             {tt('market.detailAction')}
           </Button>
+          <Button size="sm" variant="ghost" onClick={onInstall} aria-label={tt('market.installAria', { name: skill.name })}>
+            {tt('market.install')}
+          </Button>
         </div>
       </div>
     </li>
@@ -385,26 +405,18 @@ function MarketRow({ skill, onOpen }: { skill: MarketSkill; onOpen: () => void }
 }
 
 /** The detail dialog: the skill's own instructions, rendered by the shell. */
-function MarketDetailDialog({ api, id, labels, onClose }: {
+function MarketDetailDialog({ api, id, labels, onClose, onInstall }: {
   api: SkillsHubApi
   id: string
   labels: Parameters<typeof MarkdownText>[0]['labels']
   onClose: () => void
+  /** Opens the shared install panel for this skill. */
+  onInstall: () => void
 }): React.JSX.Element {
   const [detail, setDetail] = useState<MarketDetail | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const loadSeq = useRef(0)
-  // Install state: the target root is chosen before the button is pressed, and
-  // the confirmation step is where the licence warning is read — an install
-  // that never showed the user what they are agreeing to copy would make the
-  // licence tag on the row decorative.
-  const [installRoot, setInstallRoot] = useState<'user' | 'project'>('user')
-  const [confirming, setConfirming] = useState(false)
-  const [installing, setInstalling] = useState(false)
-  const [installedPath, setInstalledPath] = useState<string | undefined>(undefined)
-  const [installError, setInstallError] = useState<string | undefined>(undefined)
-  const [cwd, setCwd] = useState<string | undefined>(undefined)
 
   const load = async (): Promise<void> => {
     const seq = ++loadSeq.current
@@ -431,22 +443,6 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
   const skill = detail?.skill
   const licence = skill?.licence
 
-  const doInstall = async (): Promise<void> => {
-    setConfirming(false)
-    setInstalling(true)
-    setInstallError(undefined)
-    try {
-      const workspace = cwd ?? (await api.list()).cwd
-      setCwd(workspace)
-      const result = await api.marketInstall(id, installRoot, workspace)
-      setInstalledPath(result.path)
-    } catch (err) {
-      setInstallError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setInstalling(false)
-    }
-  }
-
   return (
     <Modal
       open
@@ -460,54 +456,28 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
       contentClassName={css.previewContent}
       footer={(
         <div className={css.previewFoot}>
-          <div className={css.previewMeta}>
-            {skill !== undefined && (
+          {skill !== undefined && (
+            <div className={css.previewMeta}>
               <div className={css.previewMetaLine}>
                 <Tag tone="outline">{skill.provider}</Tag>
                 <PathLabel path={skill.origin.kind === 'skillhub'
                   ? `skillhub.cn/${skill.origin.slug}`
                   : `${skill.origin.owner}/${skill.origin.repo}`} />
               </div>
-            )}
-            {/* Install lives in the footer, not the scrolling body: a long
-                skill's instructions can push the in-body control several
-                screens down, and the primary action of a dialog belongs where
-                every dialog keeps it — always visible, next to Close. */}
-            {skill !== undefined && detail !== undefined && (
-              <div className={css.installRow} data-dsh-part="market-install">
-                {installedPath !== undefined ? (
-                  <p className={css.feedback} data-kind="ok">{tt('market.installedAt', { path: installedPath })}</p>
-                ) : (
-                  <>
-                    <SegmentedControl
-                      id="skills-hub-install-root"
-                      value={installRoot}
-                      options={[
-                        { value: 'user', label: tt('create.root.user') },
-                        { value: 'project', label: tt('create.root.project') },
-                      ]}
-                      onChange={setInstallRoot}
-                      label={tt('market.installRoot')}
-                    />
-                    <Button
-                      variant="primary"
-                      size="md"
-                      disabled={installing}
-                      onClick={() => { setConfirming(true) }}
-                    >
-                      {installing ? tt('market.installing') : tt('market.install')}
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+            </div>
+          )}
           <div className={css.formActions}>
             {error !== undefined && (
               <Button size="sm" variant="outline" icon={<IconRefreshOutlineRegular size={16} />} onClick={() => { void load() }}>
                 {tt('action.retry')}
               </Button>
             )}
+            {/* Install sits beside Close: the primary action of the dialog is
+                always visible, and it opens the SAME install panel the result
+                row offers — one flow, two entry points. */}
+            <Button variant="primary" size="md" onClick={onInstall}>
+              {tt('market.install')}
+            </Button>
             <Button variant="outline" size="md" onClick={onClose}>{tt('common.close')}</Button>
           </div>
         </div>
@@ -563,13 +533,119 @@ function MarketDetailDialog({ api, id, labels, onClose }: {
           )}
         </div>
       )}
-      {confirming && skill !== undefined && (
+    </Modal>
+  )
+}
+
+/**
+ * The shared install panel: the one flow both entry points open.
+ *
+ * Reached from a result row's install button or from the detail dialog — the
+ * flow is identical either way: pick the target root, confirm (where the
+ * licence warning is restated at the moment of decision), then the request
+ * fires. The panel fetches the skill's own detail for its name and licence,
+ * so both entry points need nothing but the id.
+ */
+function InstallDialog({ api, id, onClose, onInstalled }: {
+  api: SkillsHubApi
+  id: string
+  onClose: () => void
+  /** Called after a successful install (the list may now contain the skill). */
+  onInstalled: () => void
+}): React.JSX.Element {
+  const [name, setName] = useState<string | undefined>(undefined)
+  const [licence, setLicence] = useState<MarketLicence | undefined>(undefined)
+  const [installRoot, setInstallRoot] = useState<'user' | 'project'>('user')
+  const [confirming, setConfirming] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const [installedPath, setInstalledPath] = useState<string | undefined>(undefined)
+  const [installError, setInstallError] = useState<string | undefined>(undefined)
+  const [cwd, setCwd] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    let cancelled = false
+    api.marketDetail(id)
+      .then(detail => {
+        if (cancelled) return
+        setName(detail.skill.name)
+        setLicence(detail.skill.licence)
+      })
+      .catch(() => { /* the panel still works: the id is what the install sends */ })
+    return () => { cancelled = true }
+  }, [api, id])
+
+  const doInstall = async (): Promise<void> => {
+    setConfirming(false)
+    setInstalling(true)
+    setInstallError(undefined)
+    try {
+      const workspace = cwd ?? (await api.list()).cwd
+      setCwd(workspace)
+      const result = await api.marketInstall(id, installRoot, workspace)
+      setInstalledPath(result.path)
+      onInstalled()
+    } catch (err) {
+      setInstallError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={tt('market.installTitle', { name: name ?? '…' })}
+      closeLabel={installedPath !== undefined ? tt('common.close') : tt('common.cancel')}
+      className={css.previewDialog}
+      footer={(
+        <div className={css.formActions}>
+          {installedPath === undefined && (
+            <>
+              <Button variant="outline" size="md" onClick={onClose}>{tt('common.cancel')}</Button>
+              <Button variant="primary" size="md" disabled={installing} onClick={() => { setConfirming(true) }}>
+                {installing ? tt('market.installing') : tt('market.install')}
+              </Button>
+            </>
+          )}
+          {installedPath !== undefined && (
+            <Button variant="outline" size="md" onClick={onClose}>{tt('common.close')}</Button>
+          )}
+        </div>
+      )}
+    >
+      {installedPath !== undefined ? (
+        <p className={css.feedback} data-kind="ok" data-dsh-part="install-done">
+          {tt('market.installedAt', { path: installedPath })}
+        </p>
+      ) : (
+        <div className={css.installPanel} data-dsh-part="market-install">
+          <p className={css.hint}>{tt('market.installHint')}</p>
+          <div className={css.field}>
+            <span className={css.fieldLabel}>{tt('market.installRoot')}</span>
+            <SegmentedControl
+              id="skills-hub-install-root"
+              value={installRoot}
+              options={[
+                { value: 'user', label: tt('market.installRoot.user') },
+                { value: 'project', label: tt('market.installRoot.project') },
+              ]}
+              onChange={setInstallRoot}
+              label={tt('market.installRoot')}
+            />
+          </div>
+          {installError !== undefined && (
+            <p className={css.feedback} data-kind="error">{tt('market.installFailed', { error: installError })}</p>
+          )}
+        </div>
+      )}
+      {confirming && (
         <Modal
           open
           onClose={() => { setConfirming(false) }}
-          title={tt('market.confirmTitle', { name: skill.name })}
+          title={tt('market.confirmTitle', { name: name ?? '…' })}
           description={tt('market.confirmBody', {
-            root: installRoot === 'user' ? tt('create.root.user') : tt('create.root.project'),
+            root: installRoot === 'user' ? tt('market.installRoot.user') : tt('market.installRoot.project'),
           })}
           closeLabel={tt('common.cancel')}
           className={css.previewDialog}
