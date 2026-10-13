@@ -25,10 +25,13 @@
 
 /* --- page frame ---------------------------------------------------------- */
 
-/* The page fills the center column the shell gives it. The column is a
-   grid row of minmax(0,1fr) whose own overflow is hidden (extracted from
-   the shell's layout bundle), so the height arriving here is definite and
-   the scroll surface must be an inner element, not this one. */
+/* The page IS the scroll surface, exactly as the shipped plugin-manager page
+   is (its .page: height:100%; flex column; overflow:auto — verified against
+   the installed bundle). The slot anchor renders with display:contents, so
+   this element is a direct flex child of the shell's center column, which is
+   an overflow:hidden grid row of minmax(0,1fr): the height arriving here is
+   definite, flex-shrink pins the element to it, and the content overflow
+   becomes this element's scrollbar. */
 .page {
   display: flex;
   flex-direction: column;
@@ -36,21 +39,25 @@
   gap: 32px;
   box-sizing: border-box;
   height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   padding: 0 clamp(24px, 4vw, 48px) 48px;
   color: var(--dsw-alias-label-primary);
+  /* The cards' hover surface hangs 8px past the content on both sides; on a
+     scrolling flex column that hang becomes a horizontal scrollbar unless the
+     x axis is clipped (the shipped page avoids it by having no wide children). */
+  overflow-x: hidden;
 }
 
-/* Every direct child is one 960px column, so the header, the tabs and the list
-   share the same optical edges. */
-.page > * {
-  width: 100%;
-  max-width: 960px;
-}
+/* The shipped page centers its children and lets them size to content
+   (align-items:center, no width rule on children — again matching the
+   shipped plugin-manager page). Blocks that must span the column set their
+   own width; nothing is forced to 100% here, because a forced full width
+   fights the card hover surface's 8px overhang and reads as a scrollbar. */
 
 .pageHead {
   display: flex;
+  width: 100%;
+  max-width: 960px;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
@@ -87,6 +94,8 @@
 
 .tabRow {
   display: flex;
+  width: 100%;
+  max-width: 960px;
   align-items: center;
   gap: 12px;
 }
@@ -95,23 +104,15 @@
   flex: 1;
 }
 
-/* The scroll surface: everything below the tab row. flex:1 + min-height:0 is
-   what lets it shrink to the space the header leaves and own the overflow;
-   without min-height:0 a flex child refuses to shrink below its content and
-   pushes the page taller than the viewport instead of scrolling. Overflow is
-   hidden on the x axis because the cards hang 8px past their container on
-   both sides (their hover surface), which must not become a scrollbar. */
+/* The tab content is a normal child of the scrolling page (the page scrolls,
+   not this). width:100% here would fight the card overhang, so the content
+   block spans the column through the same explicit width the header uses. */
 .content {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: 24px;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* Room for the focus ring of the last card not to clip. */
-  padding-bottom: 8px;
+  width: 100%;
+  max-width: 960px;
 }
 
 /* The tab content's own toolbar (search + filters), right under the tabs. The
@@ -129,9 +130,6 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-  /* A scroll-container child must be allowed to shrink, or it pushes the
-     content past the scroll surface instead of scrolling inside it. */
-  min-height: 0;
 }
 
 /* Which registries exist: one quiet line of source tags under the search. */

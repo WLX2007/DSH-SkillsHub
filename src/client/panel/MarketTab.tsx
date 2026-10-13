@@ -170,12 +170,16 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
     void runSearch(submitted, 'append', selectedSource, paged.page + 1)
   }
 
-  /** Infinite scroll: when the list's tail sentinel enters the viewport, load
-   * the next page. The observer re-arms through the tail's identity change —
-   * it re-subscribes whenever the sentinel mounts, unmounts, or the guards it
-   * reads change — and a page fetch swaps the sentinel for the loading tail,
-   * which re-arms the next page the same way, so a tall window that fits two
-   * pages keeps going.
+  /** Infinite scroll: when the list's tail sentinel scrolls into view, load
+   * the next page. The scroll container is the page element (the tab panel's
+   * scrolling ancestor — see the .page comment in panel.module.css), so the
+   * observer's root must be that element: with the default viewport root the
+   * sentinel never intersects, because the page clips its own overflow. The
+   * observer re-arms through the tail's identity change — it re-subscribes
+   * whenever the sentinel mounts, unmounts, or the guards it reads change —
+   * and a page fetch swaps the sentinel for the loading tail, which re-arms
+   * the next page the same way, so a tall window that fits two pages keeps
+   * going.
    */
   const tailRef = useRef<HTMLParagraphElement | HTMLDivElement | null>(null)
   useEffect(() => {
@@ -183,6 +187,7 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
     // The tail only renders the sentinel while a further page exists and no
     // fetch is in flight, so reaching here is itself the guard check.
     if (sentinel === null || paged === undefined || !paged.hasMore) return
+    const scrollRoot = sentinel.closest('[data-dsh-part="page"]')
     const observer = new IntersectionObserver(entries => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
@@ -190,7 +195,7 @@ export function MarketTab({ api }: { api: SkillsHubApi }): React.JSX.Element {
           break
         }
       }
-    }, { root: null, rootMargin: '240px 0px', threshold: 0 })
+    }, { root: scrollRoot, rootMargin: '240px 0px', threshold: 0 })
     observer.observe(sentinel)
     return () => { observer.disconnect() }
   })
